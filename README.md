@@ -1,73 +1,98 @@
-# React + TypeScript + Vite
+# 🚁 Drone Station Web  
+**Web-интерфейс для сервисной части станции управления дронами**
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Интерактивное веб-приложение для мониторинга и управления дрон-станциями.  
+Проект использует современный стек: **React + TypeScript + Vite + TailwindCSS + Leaflet + REST/WebSocket**.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 📌 Возможности (MVP)
 
-## React Compiler
+- 🔐 Авторизация (админ / оператор)  
+- 📡 Мониторинг станций  
+- 🔋 Просмотр статуса дронов  
+- 🗺️ Карта со станциями (Leaflet)  
+- ⚙️ Админ-панель (доступна только admin)  
+- 🧭 Маршрутизация между модулями  
+- 📦 Структурированная архитектура проекта  
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## 🔐 Аккаунты для входа (тестовые)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+| Роль     | Логин      | Пароль     |
+|----------|------------|------------|
+| Admin    | `admin`    | `admin123` |
+| Operator | `operator` | `op123`    |
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+---
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## 🛠️ Технологический стек
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Frontend
+- React + TypeScript  
+- Vite  
+- TailwindCSS  
+- React Router  
+- Leaflet  
+
+### Взаимодействие с сервером
+- REST API  
+- WebSocket (будет позже)
+
+### Инфраструктура
+- Git + GitHub  
+- Модульная структура: auth, stations, map, drone, admin  
+
+---
+
+## 📂 Структура проекта
+
+```
+src/
+  modules/
+    auth/         # Авторизация
+    stations/     # Управление станциями
+    drone/        # Данные дронов
+    map/          # Карта Leaflet
+    admin/        # Админка
+  shared/
+    auth/         # Контекст авторизации
+    api/          # API-клиент
+    components/   # Общие UI-компоненты
+    layout/       # Макеты страниц
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+---
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 🚀 Запуск проекта
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 1. Установка зависимостей
+```bash
+npm install
 ```
+
+### 2. Запуск dev-сервера
+```bash
+npm run dev
+```
+
+Открыть в браузере: http://localhost:5173
+
+---
+
+## 🔧 Сборка
+
+```bash
+npm run build
+```
+
+---
+
+## 🎯 Цель проекта
+Создать удобный интерфейс для мониторинга и управления станциями и дронами, ориентированный на операторов и администраторов.
+
+---
+
+## ⭐ Поддержка проекта
+Если проект кажется интересным — можно поставить ⭐ на GitHub!
