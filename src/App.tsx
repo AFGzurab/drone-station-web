@@ -49,10 +49,10 @@
 
 import { Routes, Route, Link } from 'react-router-dom'
 import { AuthPage } from './modules/auth/AuthPage'
-import { StationsListPage } from './modules/stations/StationsListPage'
-import { StationDetailsPage } from './modules/stations/StationDetailsPage'
-import { MapPage } from './modules/map/MapPage'
-import { AdminPage } from './modules/admin/AdminPage'
+import StationsListPage from './modules/stations/StationsListPage'
+import StationDetailsPage from './modules/stations/StationDetailsPage'
+import MapPage from "./modules/map/MapPage";
+import AdminPage from './modules/admin/AdminPage'
 import { DronePage } from './modules/drone/DronePage'
 import { ProtectedRoute } from './shared/auth/ProtectedRoute'
 import { useAuth } from './shared/auth/AuthContext'

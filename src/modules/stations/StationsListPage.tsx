@@ -1,137 +1,130 @@
 // src/modules/stations/StationsListPage.tsx
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import {
-  fetchStations,
-  type Station,
-} from '../../shared/api/stations'
-import { StationStatusBadge } from './StationStatusBadge'
 
-export function StationsListPage() {
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { fetchStations, type Station } from '../../shared/api/stations'
+
+export default function StationsListPage() {
+  const navigate = useNavigate()
+
   const [stations, setStations] = useState<Station[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    let mounted = true
-    setLoading(true)
-    fetchStations()
-      .then((data) => {
-        if (mounted) {
-          setStations(data)
-        }
-      })
-      .catch((err) => {
-        console.error(err)
-        if (mounted) {
-          setError('Не удалось загрузить список станций')
-        }
-      })
-      .finally(() => {
-        if (mounted) setLoading(false)
-      })
-
-    return () => {
-      mounted = false
+    async function load() {
+      try {
+        const data = await fetchStations()
+        setStations(data)
+      } catch {
+        setError('Не удалось загрузить список станций.')
+      } finally {
+        setLoading(false)
+      }
     }
+
+    load()
   }, [])
 
+  if (loading) {
+    return <p className="text-center mt-10 text-slate-300">Загрузка...</p>
+  }
+
+  if (error) {
+    return (
+      <p className="text-center mt-10 text-red-400 font-medium">{error}</p>
+    )
+  }
+
   return (
-    <div className="min-h-[calc(100vh-48px)] bg-slate-900 text-white px-6 py-4">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Станции</h1>
-          <p className="text-sm text-slate-400">
-            Мониторинг и управление дрон-станциями.
-          </p>
-        </div>
-      </div>
+    <div className="max-w-6xl mx-auto px-6 py-6">
+      <h1 className="text-3xl font-bold">Станции</h1>
+      <p className="text-slate-400 mt-1">
+        Мониторинг и управление дрон-станциями.
+      </p>
 
-      {loading && (
-        <p className="text-sm text-slate-300">Загрузка станций...</p>
-      )}
+      <div className="bg-slate-800/60 rounded-2xl border border-slate-700/60 p-6 mt-8">
+        <h2 className="text-xl font-semibold mb-4">Список станций</h2>
 
-      {error && (
-        <p className="text-sm text-red-400 mb-3">{error}</p>
-      )}
-
-      {!loading && !error && stations.length === 0 && (
-        <p className="text-sm text-slate-300">
-          Станции не найдены.
-        </p>
-      )}
-
-      {!loading && !error && stations.length > 0 && (
-        <div className="mt-2 overflow-hidden rounded-xl border border-slate-800 bg-slate-950/40">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-900/80 border-b border-slate-800">
+        <div className="overflow-x-auto">
+          <table className="table-auto w-full text-left">
+            <thead className="text-slate-300 text-sm border-b border-slate-700">
               <tr>
-                <th className="text-left px-4 py-2 font-medium text-slate-400">
-                  Станция
-                </th>
-                <th className="text-left px-4 py-2 font-medium text-slate-400">
-                  Статус
-                </th>
-                <th className="text-left px-4 py-2 font-medium text-slate-400">
-                  Дроны
-                </th>
-                <th className="text-left px-4 py-2 font-medium text-slate-400">
-                  Заряд
-                </th>
-                <th className="text-right px-4 py-2 font-medium text-slate-400">
-                  Действия
-                </th>
+                <th className="py-3 pl-2 w-[35%]">Станция</th>
+                <th className="py-3 text-center w-[15%]">Статус</th>
+                <th className="py-3 text-center w-[10%]">Дроны</th>
+                <th className="py-3 text-center w-[25%]">Заряд</th>
+                <th className="py-3 text-right w-[15%] pr-4">Действия</th>
               </tr>
             </thead>
-            <tbody>
-              {stations.map((station) => (
+            <tbody className="text-slate-200">
+              {stations.map((s) => (
                 <tr
-                  key={station.id}
-                  className="border-b border-slate-800/60 hover:bg-slate-900/60 transition"
+                  key={s.id}
+                  className="border-b border-slate-700/40 hover:bg-slate-700/20 transition"
                 >
-                  <td className="px-4 py-2 align-middle">
-                    <div className="flex flex-col">
-                      <span className="font-medium">
-                        {station.name}
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        {station.location}
-                      </span>
+                  {/* Название станции + координаты */}
+                  <td className="py-4 pl-2 font-medium">
+                    {s.name}
+                    <div className="text-slate-400 text-sm">
+                      {s.coords.lat}, {s.coords.lng}
                     </div>
                   </td>
-                  <td className="px-4 py-2 align-middle">
-                    <StationStatusBadge status={station.status} />
+
+                  {/* Статус */}
+                  <td className="py-4 text-center">
+                    {s.status === 'online' && (
+                      <span className="inline-flex items-center px-3 py-1 bg-emerald-600/20 text-emerald-300 rounded-full text-sm">
+                        ● Online
+                      </span>
+                    )}
+                    {s.status === 'offline' && (
+                      <span className="inline-flex items-center px-3 py-1 bg-slate-500/20 text-slate-300 rounded-full text-sm">
+                        ● Offline
+                      </span>
+                    )}
+                    {s.status === 'error' && (
+                      <span className="inline-flex items-center px-3 py-1 bg-rose-600/20 text-rose-300 rounded-full text-sm">
+                        ● Ошибка
+                      </span>
+                    )}
                   </td>
-                  <td className="px-4 py-2 align-middle text-sm">
-                    {station.dronesActive} / {station.dronesTotal}
+
+                  {/* Дроны */}
+                  <td className="py-4 text-center">
+                    {s.dronesActive} / {s.dronesTotal}
                   </td>
-                  <td className="px-4 py-2 align-middle text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+
+                  {/* Заряд */}
+                  <td className="py-4">
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="flex-1 h-2 max-w-[160px] bg-slate-700 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-sky-500"
-                          style={{ width: `${station.batteryLevel}%` }}
+                          style={{ width: `${s.batteryAvg}%` }}
                         />
                       </div>
-                      <span className="text-xs text-slate-300">
-                        {station.batteryLevel}%
+                      <span className="text-slate-300 min-w-[32px] text-right">
+                        {s.batteryAvg}%
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-2 align-middle text-right">
-                    <Link
-                      to={`/stations/${station.id}`}
-                      className="inline-flex text-xs px-3 py-1 rounded-lg border border-slate-600 hover:border-sky-400 hover:text-sky-300 transition"
+
+                  {/* Кнопка */}
+                  <td className="py-4 pr-4 text-right">
+                    <button
+                      onClick={() => navigate(`/stations/${s.id}`)}
+                      className="px-4 py-1.5 bg-sky-600 hover:bg-sky-700 rounded-xl text-white text-sm transition"
                     >
                       Открыть
-                    </Link>
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      )}
+      </div>
     </div>
   )
 }

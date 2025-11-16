@@ -1,43 +1,49 @@
-// @ts-nocheck
 // src/modules/map/MapPage.tsx
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
-import { fetchStations } from '../../shared/api/stations'
+import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
+import { useNavigate } from "react-router-dom";
+import "leaflet/dist/leaflet.css";
 
-export function MapPage() {
-  const [stations, setStations] = useState([])
-  const [loading, setLoading] = useState(true)
-  const navigate = useNavigate()
+import { fetchStations } from "../../shared/api/stations";
+import type { Station } from "../../shared/api/stations";
+import { useEffect, useState } from "react";
 
-  // центр карты — Новосибирск
-  const center = [55.03, 82.92]
+export default function MapPage() {
+  const navigate = useNavigate();
+
+  const [stations, setStations] = useState<Station[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let mounted = true
-    setLoading(true)
-    fetchStations()
-      .then((data) => {
-        if (mounted) setStations(data)
-      })
-      .finally(() => {
-        if (mounted) setLoading(false)
-      })
-    return () => {
-      mounted = false
+    async function load() {
+      try {
+        const data = await fetchStations();
+        setStations(data);
+      } finally {
+        setLoading(false);
+      }
     }
-  }, [])
+    load();
+  }, []);
+
+  // Центр карты (Новосибирск)
+  const center: [number, number] = [55.03, 82.92];
+
+  if (loading) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center text-white">
+        Загрузка карты...
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-[calc(100vh-48px)] bg-slate-900 text-white px-6 py-4">
-      <div className="mb-4">
-        <h1 className="text-2xl font-semibold">Карта станций</h1>
-        <p className="text-sm text-slate-400">
-          На карте отображаются дрон-станции и их статус.
-        </p>
-      </div>
+    <div className="p-6">
+      <h1 className="text-2xl font-bold text-white mb-1">Карта станций</h1>
+      <p className="text-sm text-slate-400 mb-4">
+        На карте отображаются дрон-станции и их статус.
+      </p>
 
-      <div className="h-[70vh] rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
+      <div className="h-[70vh] rounded-xl overflow-hidden border border-slate-800">
         <MapContainer
           center={center}
           zoom={11}
@@ -49,49 +55,59 @@ export function MapPage() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          {!loading &&
-            stations.map((st) => (
+          {stations.map((station) => {
+            const { lat, lng } = station.coords;
+
+            return (
               <CircleMarker
-                key={st.id}
-                center={[st.lat, st.lng]}
-                radius={10}
+                key={station.id}
+                center={[lat, lng]}
+                radius={14}
                 pathOptions={{
                   color:
-                    st.status === 'online'
-                      ? '#22c55e'
-                      : st.status === 'offline'
-                      ? '#64748b'
-                      : '#ef4444',
+                    station.status === "online"
+                      ? "#2dd4bf"
+                      : station.status === "error"
+                      ? "#ef4444"
+                      : "#64748b",
                   fillColor:
-                    st.status === 'online'
-                      ? '#22c55e'
-                      : st.status === 'offline'
-                      ? '#64748b'
-                      : '#ef4444',
+                    station.status === "online"
+                      ? "#2dd4bf"
+                      : station.status === "error"
+                      ? "#ef4444"
+                      : "#64748b",
                   fillOpacity: 0.8,
                 }}
               >
-                <Popup>
-                  <div className="text-sm">
-                    <div className="font-semibold mb-1">{st.name}</div>
-                    <div className="text-xs text-slate-500 mb-1">
-                      {st.location}
-                    </div>
-                    <div className="text-xs mb-2">
-                      Дроны: {st.dronesActive} / {st.dronesTotal}
-                    </div>
+                <Popup className="popup-station">
+                  <div className="space-y-1 text-sm">
+                    <h3 className="font-semibold">{station.name}</h3>
+
+                    <p className="text-xs text-slate-700">
+                      Координаты: {lat}, {lng}
+                    </p>
+
+                    <p className="text-xs text-slate-700">
+                      Дроны: {station.dronesActive} / {station.dronesTotal}
+                    </p>
+
+                    <p className="text-xs text-slate-700">
+                      Средний заряд: {station.batteryAvg}%
+                    </p>
+
                     <button
-                      className="text-xs px-2 py-1 rounded-lg bg-sky-500 hover:bg-sky-600 text-white"
-                      onClick={() => navigate(`/stations/${st.id}`)}
+                      className="mt-2 w-full rounded-full bg-sky-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-sky-400"
+                      onClick={() => navigate(`/stations/${station.id}`)}
                     >
                       Открыть станцию
                     </button>
                   </div>
                 </Popup>
               </CircleMarker>
-            ))}
+            );
+          })}
         </MapContainer>
       </div>
     </div>
-  )
+  );
 }

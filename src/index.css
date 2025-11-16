@@ -2,6 +2,94 @@
 @tailwind components;
 @tailwind utilities;
 
+/* === Глобальный стиль проекта === */
+
+/* Контейнеры страниц */
+.page-container {
+  @apply px-6 py-4 md:px-10 md:py-6;
+}
+
+/* Заголовки */
+h1 {
+  @apply text-2xl font-semibold mb-2;
+}
+h2 {
+  @apply text-xl font-semibold mb-2;
+}
+h3 {
+  @apply text-lg font-medium mb-1;
+}
+
+/* Абзацы */
+p {
+  @apply text-sm text-slate-300;
+}
+
+/* Карточный контейнер */
+.card {
+  @apply bg-slate-800/80 border border-slate-700/60 rounded-2xl p-5;
+}
+
+/* Разделительная линия */
+.divider {
+  @apply h-px bg-slate-700/60 my-4;
+}
+
+/* === Статусы === */
+
+.status-badge {
+  @apply inline-flex items-center px-3 py-1 rounded-full text-xs border;
+}
+
+.status-online {
+  @apply bg-emerald-500/10 text-emerald-400 border-emerald-500/40;
+}
+
+.status-offline {
+  @apply bg-slate-500/10 text-slate-300 border-slate-500/40;
+}
+
+.status-error {
+  @apply bg-rose-500/10 text-rose-400 border-rose-500/40;
+}
+
+.status-mission {
+  @apply bg-sky-500/10 text-sky-400 border-sky-500/40;
+}
+
+.popup-station {
+  color: #1e293b !important; /* text-slate-800 */
+  font-weight: 500;
+}
+
+.popup-station h3 {
+  color: #0f172a !important; /* text-slate-900 */
+}
+
+.popup-station p {
+  margin: 2px 0;
+}
+
+/* Тёмный тонкий скролл для дашборда */
+.scroll-dark {
+  scrollbar-width: thin;
+  scrollbar-color: #1f2937 transparent; /* thumb, track */
+}
+
+.scroll-dark::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scroll-dark::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-dark::-webkit-scrollbar-thumb {
+  background: #1f2937;
+  border-radius: 9999px;
+}
+
+
 .leaflet-control-attribution,
 .leaflet-control-logo,
 .leaflet-control-container .leaflet-logo {

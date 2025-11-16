@@ -5,97 +5,93 @@ export type StationStatus = 'online' | 'offline' | 'error'
 export type Station = {
   id: string
   name: string
-  location: string
   status: StationStatus
-  dronesTotal: number
+  // Координаты станции (для списка, карты и деталей)
+  coords: {
+    lat: number
+    lng: number
+  }
+  // Дроны: активные / всего
   dronesActive: number
-  batteryLevel: number // средний заряд, %
-  lat: number
-  lng: number
+  dronesTotal: number
+  // Средний заряд по станции
+  batteryAvg: number
+  // Оставляем batteryLevel для обратной совместимости (admin/старый код)
+  batteryLevel?: number
 }
 
-const STATIONS: Station[] = [
+// Команды станции (фейковые)
+export type StationCommand = 'send' | 'return' | 'restart'
+
+export async function sendStationCommand(
+  stationId: string,
+  command: StationCommand,
+): Promise<{ message: string }> {
+  // Фейковая задержка, имитация запроса к API
+  await new Promise((resolve) => setTimeout(resolve, 500))
+
+  let message = 'Команда выполнена (фейк).'
+
+  switch (command) {
+    case 'send':
+      message = 'Команда отправки дрона на задание выполнена (фейк).'
+      break
+    case 'return':
+      message = 'Команда возврата дрона на станцию выполнена (фейк).'
+      break
+    case 'restart':
+      message = 'Команда перезапуска станции выполнена (фейк).'
+      break
+  }
+
+  console.log('[sendStationCommand]', { stationId, command, message })
+  return { message }
+}
+
+// -------------------- Мок-данные --------------------
+
+const mockStations: Station[] = [
   {
     id: 'st-1',
     name: 'Станция №1 — Северная',
-    location: '55.030, 82.920 (Новосибирск)',
     status: 'online',
-    dronesTotal: 3,
+    coords: { lat: 55.03, lng: 82.92 },
     dronesActive: 1,
+    dronesTotal: 3,
+    batteryAvg: 82,
     batteryLevel: 82,
-    lat: 55.12,
-    lng: 82.92,
   },
   {
     id: 'st-2',
     name: 'Станция №2 — Восточная',
-    location: '54.980, 83.050',
     status: 'offline',
-    dronesTotal: 2,
+    coords: { lat: 54.98, lng: 83.05 },
     dronesActive: 0,
+    dronesTotal: 2,
+    batteryAvg: 56,
     batteryLevel: 56,
-    lat: 55.03,
-    lng: 83.1,
   },
   {
     id: 'st-3',
     name: 'Станция №3 — Южная',
-    location: '54.900, 82.950',
     status: 'error',
-    dronesTotal: 4,
+    coords: { lat: 54.9, lng: 82.95 },
     dronesActive: 2,
+    dronesTotal: 4,
+    batteryAvg: 34,
     batteryLevel: 34,
-    lat: 54.9,
-    lng: 82.95,
   },
 ]
 
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
+// Получить все станции
 export async function fetchStations(): Promise<Station[]> {
-  await delay(300)
-  return STATIONS
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  return mockStations
 }
 
+// Получить одну станцию по id
 export async function fetchStationById(id: string): Promise<Station | null> {
-  await delay(300)
-  const station = STATIONS.find((s) => s.id === id)
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  const station = mockStations.find((s) => s.id === id)
   return station ?? null
-}
-
-// ---- НОВОЕ: тип команды и ответ ----
-
-export type StationCommand = 'send_drone' | 'return_drone' | 'restart_station'
-
-export async function sendStationCommand(
-  id: string,
-  command: StationCommand,
-): Promise<{ success: boolean; message: string }> {
-  await delay(500)
-
-  // Тут мог бы быть реальный запрос на backend. Пока — фейковая логика.
-  switch (command) {
-    case 'send_drone':
-      return {
-        success: true,
-        message: 'Команда отправки дрона на задание выполнена (фейк).',
-      }
-    case 'return_drone':
-      return {
-        success: true,
-        message: 'Команда возврата дрона на станцию выполнена (фейк).',
-      }
-    case 'restart_station':
-      return {
-        success: true,
-        message: 'Станция перезапущена (фейк).',
-      }
-    default:
-      return {
-        success: false,
-        message: 'Неизвестная команда станции.',
-      }
-  }
 }
