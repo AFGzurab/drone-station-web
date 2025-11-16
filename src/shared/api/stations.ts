@@ -10,11 +10,10 @@ export type Station = {
   dronesTotal: number
   dronesActive: number
   batteryLevel: number // средний заряд, %
-  lat: number         // широта
-  lng: number         // долгота
+  lat: number
+  lng: number
 }
 
-// Фейковые станции для разработки
 const STATIONS: Station[] = [
   {
     id: 'st-1',
@@ -24,8 +23,8 @@ const STATIONS: Station[] = [
     dronesTotal: 3,
     dronesActive: 1,
     batteryLevel: 82,
-    lat: 55.120,
-    lng: 82.920,
+    lat: 55.12,
+    lng: 82.92,
   },
   {
     id: 'st-2',
@@ -35,8 +34,8 @@ const STATIONS: Station[] = [
     dronesTotal: 2,
     dronesActive: 0,
     batteryLevel: 56,
-    lat: 55.030,
-    lng: 83.100,
+    lat: 55.03,
+    lng: 83.1,
   },
   {
     id: 'st-3',
@@ -46,31 +45,57 @@ const STATIONS: Station[] = [
     dronesTotal: 4,
     dronesActive: 2,
     batteryLevel: 34,
-    lat: 54.900,
-    lng: 82.950,
+    lat: 54.9,
+    lng: 82.95,
   },
 ]
 
-// Имитация REST-запросов
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 export async function fetchStations(): Promise<Station[]> {
-  // имитация задержки сети
-  await new Promise((res) => setTimeout(res, 300))
+  await delay(300)
   return STATIONS
 }
 
 export async function fetchStationById(id: string): Promise<Station | null> {
-  await new Promise((res) => setTimeout(res, 200))
+  await delay(300)
   const station = STATIONS.find((s) => s.id === id)
   return station ?? null
 }
 
-// Заглушки под "команды" станции (отправить дрон / вернуть / перезапуск)
+// ---- НОВОЕ: тип команды и ответ ----
+
+export type StationCommand = 'send_drone' | 'return_drone' | 'restart_station'
+
 export async function sendStationCommand(
-  stationId: string,
-  command: 'send_drone' | 'return_drone' | 'restart',
-): Promise<void> {
-  console.log('Команда к станции', stationId, command)
-  await new Promise((res) => setTimeout(res, 300))
-  // Тут позже можно будет обновлять STATIONS или дергать real API
+  id: string,
+  command: StationCommand,
+): Promise<{ success: boolean; message: string }> {
+  await delay(500)
+
+  // Тут мог бы быть реальный запрос на backend. Пока — фейковая логика.
+  switch (command) {
+    case 'send_drone':
+      return {
+        success: true,
+        message: 'Команда отправки дрона на задание выполнена (фейк).',
+      }
+    case 'return_drone':
+      return {
+        success: true,
+        message: 'Команда возврата дрона на станцию выполнена (фейк).',
+      }
+    case 'restart_station':
+      return {
+        success: true,
+        message: 'Станция перезапущена (фейк).',
+      }
+    default:
+      return {
+        success: false,
+        message: 'Неизвестная команда станции.',
+      }
+  }
 }
