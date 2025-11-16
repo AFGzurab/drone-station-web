@@ -10,6 +10,8 @@ export type Station = {
   dronesTotal: number
   dronesActive: number
   batteryLevel: number // средний заряд, %
+  lat: number         // широта
+  lng: number         // долгота
 }
 
 // Фейковые станции для разработки
@@ -22,6 +24,8 @@ const STATIONS: Station[] = [
     dronesTotal: 3,
     dronesActive: 1,
     batteryLevel: 82,
+    lat: 55.120,
+    lng: 82.920,
   },
   {
     id: 'st-2',
@@ -31,6 +35,8 @@ const STATIONS: Station[] = [
     dronesTotal: 2,
     dronesActive: 0,
     batteryLevel: 56,
+    lat: 55.030,
+    lng: 83.100,
   },
   {
     id: 'st-3',
@@ -40,6 +46,8 @@ const STATIONS: Station[] = [
     dronesTotal: 4,
     dronesActive: 2,
     batteryLevel: 34,
+    lat: 54.900,
+    lng: 82.950,
   },
 ]
 
