@@ -53,6 +53,7 @@ import StationsListPage from './modules/stations/StationsListPage'
 import StationDetailsPage from './modules/stations/StationDetailsPage'
 import MapPage from "./modules/map/MapPage";
 import AdminPage from './modules/admin/AdminPage'
+import FlightsPage from './modules/flights/FlightsPage'
 import { DronePage } from './modules/drone/DronePage'
 import { ProtectedRoute } from './shared/auth/ProtectedRoute'
 import { useAuth } from './shared/auth/AuthContext'
@@ -83,6 +84,7 @@ function App() {
               <Link to="/map" className="hover:text-sky-300">
                 Карта
               </Link>
+              <Link to="/flights">Полёты</Link>
               {user.role === 'admin' && (
                 <Link to="/admin" className="hover:text-sky-300">
                   Админка
@@ -149,6 +151,8 @@ function App() {
               </ProtectedRoute>
             }
           />
+
+          <Route path="/flights" element={<FlightsPage />} />
 
           {/* Страница дрона */}
           <Route

@@ -18,7 +18,8 @@ export type DroneCommand =
   | 'return_to_station'
   | 'emergency_landing'
 
-const DRONES: Drone[] = [
+// ВАЖНО: экспортируем DRONES
+export const DRONES: Drone[] = [
   {
     id: 'dr-101',
     code: 'DR-101',
@@ -38,6 +39,16 @@ const DRONES: Drone[] = [
     battery: 63,
     lastContact: '30 секунд назад',
     mission: 'Обработка поля №12',
+  },
+  {
+    id: 'dr-103',
+    code: 'DR-103',
+    name: 'Дрон DR-103',
+    stationId: 'st-1',
+    status: 'returning',
+    battery: 47,
+    lastContact: '2 минуты назад',
+    mission: 'Возвращается на станцию',
   },
   {
     id: 'dr-201',
@@ -82,6 +93,8 @@ export async function sendDroneCommand(
 ): Promise<{ success: boolean; message: string }> {
   await delay(500)
 
+
+
   switch (command) {
     case 'send_on_mission':
       return {
@@ -104,4 +117,11 @@ export async function sendDroneCommand(
         message: `Дрон ${id}: неизвестная команда.`,
       }
   }
+}
+
+// ВНИЗУ файла, после sendDroneCommand
+
+export async function fetchAllDrones(): Promise<Drone[]> {
+  await delay(200)
+  return DRONES
 }
