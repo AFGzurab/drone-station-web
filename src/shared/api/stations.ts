@@ -1,6 +1,6 @@
 // src/shared/api/stations.ts
 
-import { DRONES } from './drones'
+import { DRONES, type Drone } from './drones'
 
 export type StationStatus = 'online' | 'offline' | 'error'
 
@@ -50,73 +50,79 @@ export async function sendStationCommand(
   return { message }
 }
 
-// -------------------- Вспомогательная логика по дронам --------------------
+// -------------------- Базовые мок-станции --------------------
 
-function getDroneStats(stationId: string) {
-  const list = DRONES.filter((d) => d.stationId === stationId)
-  const active = list.filter(
-    (d) => d.status === 'on_mission' || d.status === 'returning',
+const baseStations: Station[] = [
+  {
+    id: 'st-1',
+    name: 'Станция №1 — Северная',
+    status: 'online',
+    coords: { lat: 55.03, lng: 82.92 },
+    dronesActive: 0,
+    dronesTotal: 0,
+    batteryAvg: 0,
+  },
+  {
+    id: 'st-2',
+    name: 'Станция №2 — Восточная',
+    status: 'offline',
+    coords: { lat: 54.98, lng: 83.05 },
+    dronesActive: 0,
+    dronesTotal: 0,
+    batteryAvg: 0,
+  },
+  {
+    id: 'st-3',
+    name: 'Станция №3 — Южная',
+    status: 'error',
+    coords: { lat: 54.9, lng: 82.95 },
+    dronesActive: 0,
+    dronesTotal: 0,
+    batteryAvg: 0,
+  },
+]
+
+// ---------- Вспомогалка для пересчёта агрегатов по дронам ----------
+
+function computeAggregatesForStation(stationId: string) {
+  const drones: Drone[] = DRONES.filter((d) => d.stationId === stationId)
+
+  const dronesTotal = drones.length
+  const dronesActive = drones.filter((d) =>
+    ['on_mission', 'returning'].includes(d.status),
   ).length
 
-  return {
-    active,
-    total: list.length,
-  }
+  const batteryAvg =
+    dronesTotal > 0
+      ? Math.round(drones.reduce((sum, d) => sum + d.battery, 0) / dronesTotal)
+      : 0
+
+  return { dronesTotal, dronesActive, batteryAvg }
 }
 
-// -------------------- Мок-данные --------------------
+function buildStationWithAggregates(base: Station): Station {
+  const { dronesTotal, dronesActive, batteryAvg } =
+    computeAggregatesForStation(base.id)
 
-const mockStations: Station[] = [
-  (() => {
-    const stats = getDroneStats('st-1')
-    return {
-      id: 'st-1',
-      name: 'Станция №1 — Северная',
-      status: 'online',
-      coords: { lat: 55.03, lng: 82.92 },
-      dronesActive: stats.active,
-      dronesTotal: stats.total,
-      batteryAvg: 82,
-      batteryLevel: 82,
-    }
-  })(),
-  (() => {
-    const stats = getDroneStats('st-2')
-    return {
-      id: 'st-2',
-      name: 'Станция №2 — Восточная',
-      status: 'offline',
-      coords: { lat: 54.98, lng: 83.05 },
-      dronesActive: stats.active,
-      dronesTotal: stats.total,
-      batteryAvg: 56,
-      batteryLevel: 56,
-    }
-  })(),
-  (() => {
-    const stats = getDroneStats('st-3')
-    return {
-      id: 'st-3',
-      name: 'Станция №3 — Южная',
-      status: 'error',
-      coords: { lat: 54.9, lng: 82.95 },
-      dronesActive: stats.active,
-      dronesTotal: stats.total,
-      batteryAvg: 34,
-      batteryLevel: 34,
-    }
-  })(),
-]
+  return {
+    ...base,
+    dronesTotal,
+    dronesActive,
+    batteryAvg,
+    batteryLevel: batteryAvg, // чтобы старый код, который смотрит на batteryLevel, тоже работал
+  }
+}
 
 // Получить все станции
 export async function fetchStations(): Promise<Station[]> {
   await new Promise((resolve) => setTimeout(resolve, 150))
-  return mockStations
+  return baseStations.map(buildStationWithAggregates)
 }
 
 // Получить одну станцию по id
 export async function fetchStationById(id: string): Promise<Station | null> {
   await new Promise((resolve) => setTimeout(resolve, 120))
-  const station = mockStations.find((s) => s.id === id)
-  return station ?? null
+  const base = baseStations.find((s) => s.id === id)
+  if (!base) return null
+  return buildStationWithAggregates(base)
 }

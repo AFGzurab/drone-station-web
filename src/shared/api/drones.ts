@@ -1,6 +1,11 @@
 // src/shared/api/drones.ts
 
-export type DroneStatus = 'idle' | 'on_mission' | 'returning' | 'error' | 'offline'
+export type DroneStatus =
+  | 'idle'
+  | 'on_mission'
+  | 'returning'
+  | 'error'
+  | 'offline'
 
 export type Drone = {
   id: string
@@ -18,7 +23,8 @@ export type DroneCommand =
   | 'return_to_station'
   | 'emergency_landing'
 
-// ВАЖНО: экспортируем DRONES
+// -------------------- Мок-дроны --------------------
+
 export const DRONES: Drone[] = [
   {
     id: 'dr-101',
@@ -56,7 +62,7 @@ export const DRONES: Drone[] = [
     name: 'Дрон DR-201',
     stationId: 'st-2',
     status: 'offline',
-    battery: 40,
+    battery: 30,
     lastContact: '15 минут назад',
     mission: 'Ожидает подключения',
   },
@@ -76,24 +82,31 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+// Все дроны (для карты, админки и т.п.)
+export async function fetchAllDrones(): Promise<Drone[]> {
+  await delay(200)
+  return DRONES
+}
+
+// Дроны по станции
 export async function fetchDronesByStation(stationId: string): Promise<Drone[]> {
-  await delay(300)
+  await delay(200)
   return DRONES.filter((d) => d.stationId === stationId)
 }
 
+// Один дрон по id
 export async function fetchDroneById(id: string): Promise<Drone | null> {
-  await delay(300)
+  await delay(200)
   const drone = DRONES.find((d) => d.id === id)
   return drone ?? null
 }
 
+// Отправка команды дрону (фейк)
 export async function sendDroneCommand(
   id: string,
   command: DroneCommand,
 ): Promise<{ success: boolean; message: string }> {
   await delay(500)
-
-
 
   switch (command) {
     case 'send_on_mission':
@@ -117,11 +130,4 @@ export async function sendDroneCommand(
         message: `Дрон ${id}: неизвестная команда.`,
       }
   }
-}
-
-// ВНИЗУ файла, после sendDroneCommand
-
-export async function fetchAllDrones(): Promise<Drone[]> {
-  await delay(200)
-  return DRONES
 }
