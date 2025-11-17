@@ -82,6 +82,8 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+// -------------------- REST-подобные функции --------------------
+
 // Все дроны (для карты, админки и т.п.)
 export async function fetchAllDrones(): Promise<Drone[]> {
   await delay(200)
@@ -101,33 +103,120 @@ export async function fetchDroneById(id: string): Promise<Drone | null> {
   return drone ?? null
 }
 
-// Отправка команды дрону (фейк)
+// Отправка команды дрону (фейк + изменение состояния в мок-данных)
 export async function sendDroneCommand(
   id: string,
   command: DroneCommand,
 ): Promise<{ success: boolean; message: string }> {
   await delay(500)
 
+  const drone = DRONES.find((d) => d.id === id)
+
   switch (command) {
     case 'send_on_mission':
+      if (drone) {
+        drone.status = 'on_mission'
+        drone.mission = 'Выполнение задания (симуляция)'
+        drone.lastContact = 'несколько секунд назад'
+      }
       return {
         success: true,
         message: `Дрон ${id}: отправлен на задание (фейк).`,
       }
+
     case 'return_to_station':
+      if (drone) {
+        drone.status = 'returning'
+        drone.mission = 'Возвращается на станцию (симуляция)'
+        drone.lastContact = 'несколько секунд назад'
+      }
       return {
         success: true,
         message: `Дрон ${id}: возвращается на станцию (фейк).`,
       }
+
     case 'emergency_landing':
+      if (drone) {
+        drone.status = 'idle'
+        drone.mission = 'Экстренная посадка выполнена (симуляция)'
+        drone.lastContact = 'несколько секунд назад'
+        // немного просаживаем батарею
+        drone.battery = Math.max(0, drone.battery - 5)
+      }
       return {
         success: true,
         message: `Дрон ${id}: выполнена экстренная посадка (фейк).`,
       }
+
     default:
       return {
         success: false,
         message: `Дрон ${id}: неизвестная команда.`,
       }
+  }
+}
+
+// -------------------- Телеметрия (WebSocket-like) --------------------
+
+export type TelemetryUnsubscribe = () => void
+export type DroneTelemetryCallback = (drone: Drone) => void
+
+// храним интервалы телеметрии по id дрона
+const telemetryTimers = new Map<string, number>()
+
+/**
+ * Подписка на "телеметрию" дрона.
+ * Эмулирует WebSocket: периодически обновляет мок-данные и вызывает callback.
+ */
+export function subscribeToDroneTelemetry(
+  droneId: string,
+  callback: DroneTelemetryCallback,
+): TelemetryUnsubscribe {
+  const drone = DRONES.find((d) => d.id === droneId)
+
+  if (!drone) {
+    // если дрона нет — сразу ничего не делаем
+    return () => {}
+  }
+
+  // сразу отдаём текущее состояние
+  callback({ ...drone })
+
+  // если уже есть таймер для этого дрона — чистим
+  const existing = telemetryTimers.get(droneId)
+  if (existing) {
+    clearInterval(existing)
+  }
+
+  const timerId = window.setInterval(() => {
+    const d = DRONES.find((x) => x.id === droneId)
+    if (!d) return
+
+    // лёгкая симуляция изменения батареи и статуса
+if (d.status === 'on_mission' || d.status === 'returning') {
+  const delta = Math.floor(Math.random() * 3) + 1 // 1–3%
+  d.battery = Math.max(0, d.battery - delta)
+  d.lastContact = 'несколько секунд назад'
+
+  if (d.battery <= 10) {
+    d.status = 'error'
+    d.mission = 'Критический уровень заряда (симуляция)'
+  }
+} else if (d.status === 'idle') {
+  d.lastContact = '1 минуту назад'
+}
+
+    // отдаём копию объекта, чтобы не мутировать состояние React напрямую
+    callback({ ...d })
+  }, 4000) // раз в 4 секунды
+
+  telemetryTimers.set(droneId, timerId)
+
+  return () => {
+    const t = telemetryTimers.get(droneId)
+    if (t) {
+      clearInterval(t)
+      telemetryTimers.delete(droneId)
+    }
   }
 }

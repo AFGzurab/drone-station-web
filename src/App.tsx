@@ -66,7 +66,7 @@ function App() {
       {/* Верхняя панель */}
       <header className="border-b border-slate-800 px-6 py-3 flex gap-4 items-center justify-between">
         <span className="font-semibold text-sky-400">
-          Drone Station Web
+          Станционный Паук
         </span>
 
         <nav className="flex gap-3 text-sm items-center">

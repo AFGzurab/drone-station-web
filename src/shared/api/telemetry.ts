@@ -17,13 +17,19 @@ export type DroneTelemetry = {
 }
 
 // простая карта "станция -> базовые координаты" для старта телеметрии
-const STATION_BASE_COORDS: Record<
-  string,
-  { lat: number; lng: number }
-> = {
+const STATION_BASE_COORDS: Record<string, { lat: number; lng: number }> = {
   'st-1': { lat: 55.03, lng: 82.92 },
   'st-2': { lat: 54.98, lng: 83.05 },
   'st-3': { lat: 54.9, lng: 82.95 },
+}
+
+// условные точки заданий для отдельных дронов
+const DRONE_MISSION_TARGETS: Record<string, { lat: number; lng: number }> = {
+  // DR-102 — поле южнее станции
+  'dr-102': { lat: 54.98, lng: 82.93 },
+  // DR-103 — участок восточнее станции
+  'dr-103': { lat: 55.05, lng: 82.99 },
+  // сюда можно добавлять другие дроны по мере необходимости
 }
 
 // ----- внутреннее состояние -----
@@ -39,11 +45,19 @@ let timer: number | null = null
 
 function initTelemetryForDrone(droneId: string): DroneTelemetry {
   const drone = DRONES.find((d) => d.id === droneId)
-  const base =
+
+  const stationBase =
     (drone && STATION_BASE_COORDS[drone.stationId]) ||
     STATION_BASE_COORDS['st-1']
 
-  // небольшое случайное смещение вокруг станции
+  // если дрон на задании — стартуем около точки задания,
+  // иначе около станции
+  const missionTarget =
+    (drone && DRONE_MISSION_TARGETS[drone.id]) || stationBase
+
+  const base = drone?.status === 'on_mission' ? missionTarget : stationBase
+
+  // небольшое случайное смещение вокруг базовой точки
   const offsetLat = (Math.random() - 0.5) * 0.01
   const offsetLng = (Math.random() - 0.5) * 0.01
 
@@ -71,12 +85,30 @@ function updateTelemetryTick() {
       t = initTelemetryForDrone(drone.id)
     }
 
-    // лёгкое "дрейфование" координат
+    // базовые точки
+    const stationBase = STATION_BASE_COORDS[drone.stationId]
+    const missionTarget = DRONE_MISSION_TARGETS[drone.id] ?? stationBase
+
+    // лёгкое "дрейфование"
     const moveFactor =
-      drone.status === 'on_mission' || drone.status === 'returning' ? 0.002 : 0.0005
+      drone.status === 'on_mission' || drone.status === 'returning'
+        ? 0.002
+        : 0.0005
 
     t.lat += (Math.random() - 0.5) * moveFactor
     t.lng += (Math.random() - 0.5) * moveFactor
+
+    // притяжение к точке задания
+    if (drone.status === 'on_mission') {
+      t.lat += (missionTarget.lat - t.lat) * 0.02
+      t.lng += (missionTarget.lng - t.lng) * 0.02
+    }
+
+    // притяжение к станции, если возвращается
+    if (drone.status === 'returning') {
+      t.lat += (stationBase.lat - t.lat) * 0.03
+      t.lng += (stationBase.lng - t.lng) * 0.03
+    }
 
     // скорость в зависимости от статуса
     t.speed = getSpeedForStatus(drone.status)
@@ -121,9 +153,7 @@ function getSpeedForStatus(status: DroneStatus): number {
     case 'returning':
       return 30 + Math.random() * 10 // 30–40
     case 'error':
-      return 0
     case 'offline':
-      return 0
     default:
       return 0
   }
@@ -169,4 +199,11 @@ export function getTelemetryForDrone(
   droneId: string,
 ): DroneTelemetry | null {
   return telemetryByDrone[droneId] ?? null
+}
+
+// координаты точки задания для дрона (если она есть)
+export function getMissionTarget(
+  droneId: string,
+): { lat: number; lng: number } | null {
+  return DRONE_MISSION_TARGETS[droneId] ?? null
 }

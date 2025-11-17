@@ -8,6 +8,7 @@ import {
   sendDroneCommand,
   type Drone,
   type DroneCommand,
+  subscribeToDroneTelemetry,
 } from "../../shared/api/drones";
 
 import {
@@ -15,6 +16,11 @@ import {
   type Flight,
   type FlightStatus,
 } from "../../shared/api/flights";
+
+import {
+  subscribeToTelemetry,
+  type DroneTelemetry,
+} from "../../shared/api/telemetry";
 
 function getFlightStatusLabel(status: FlightStatus): string {
   switch (status) {
@@ -60,6 +66,9 @@ export function DronePage() {
   const [flights, setFlights] = useState<Flight[]>([]);
   const [flightsLoading, setFlightsLoading] = useState(false);
   const [flightsError, setFlightsError] = useState<string | null>(null);
+
+  // Онлайн-телеметрия (скорость, высота, сигнал, координаты)
+  const [telemetry, setTelemetry] = useState<DroneTelemetry | null>(null);
 
   // ------------------------------------------
   // Загрузка данных дрона
@@ -118,6 +127,39 @@ export function DronePage() {
 
     return () => {
       mounted = false;
+    };
+  }, [id]);
+
+  // ------------------------------------------
+  // Подписка на «состояние дрона» (эмуляция WebSocket)
+  // ------------------------------------------
+  useEffect(() => {
+    if (!id) return;
+
+    const unsubscribe = subscribeToDroneTelemetry(id, (updatedDrone) => {
+      setDrone(updatedDrone);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [id]);
+
+  // ------------------------------------------
+  // Подписка на общую телеметрию и вытаскиваем данные по этому дрону
+  // ------------------------------------------
+  useEffect(() => {
+    if (!id) return;
+
+    const unsubscribe = subscribeToTelemetry((snapshot) => {
+      const t = snapshot.find((item) => item.droneId === id);
+      if (t) {
+        setTelemetry(t);
+      }
+    });
+
+    return () => {
+      unsubscribe();
     };
   }, [id]);
 
@@ -232,6 +274,57 @@ export function DronePage() {
                   </span>
                 </div>
               </div>
+
+              {/* Онлайн-телеметрия */}
+              {telemetry && (
+                <div className="mt-5 border-t border-slate-800 pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="text-sm font-semibold">
+                        Онлайн-телеметрия
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Обновлено:{" "}
+                        {new Date(
+                          telemetry.lastUpdate
+                        ).toLocaleTimeString("ru-RU", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                    <div className="text-right text-xs text-slate-400">
+                      <div>
+                        {telemetry.lat.toFixed(4)},{" "}
+                        {telemetry.lng.toFixed(4)}
+                      </div>
+                      <div className="text-slate-500">Координаты</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                    <div>
+                      <p className="text-slate-400 text-xs">Скорость</p>
+                      <p className="text-slate-100 font-medium">
+                        {Math.round(telemetry.speed)} км/ч
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-slate-400 text-xs">Высота</p>
+                      <p className="text-slate-100 font-medium">
+                        {Math.round(telemetry.altitude)} м
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-slate-400 text-xs">Сигнал</p>
+                      <p className="text-slate-100 font-medium">
+                        {Math.round(telemetry.signal)}%
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Карточка "Недавние полёты этого дрона" */}
@@ -314,13 +407,13 @@ export function DronePage() {
             </div>
           </div>
 
-                    {/* Правая колонка: команды дрону — как у команд станции */}
+          {/* Правая колонка: команды дрону — как у команд станции */}
           <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6 h-fit self-start">
             <h2 className="text-lg font-semibold mb-4">Команды дрону</h2>
 
             <div className="space-y-3">
               <button
-                onClick={() => handleCommand('send_on_mission')}
+                onClick={() => handleCommand("send_on_mission")}
                 className="w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-medium transition disabled:opacity-60 disabled:cursor-not-allowed"
                 disabled={commandLoading}
               >
@@ -328,7 +421,7 @@ export function DronePage() {
               </button>
 
               <button
-                onClick={() => handleCommand('return_to_station')}
+                onClick={() => handleCommand("return_to_station")}
                 className="w-full py-2 rounded-xl bg-slate-600 hover:bg-slate-700 text-white font-medium transition disabled:opacity-60 disabled:cursor-not-allowed"
                 disabled={commandLoading}
               >
@@ -336,7 +429,7 @@ export function DronePage() {
               </button>
 
               <button
-                onClick={() => handleCommand('emergency_landing')}
+                onClick={() => handleCommand("emergency_landing")}
                 className="w-full py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-medium transition disabled:opacity-60 disabled:cursor-not-allowed"
                 disabled={commandLoading}
               >
@@ -363,7 +456,6 @@ export function DronePage() {
               </p>
             )}
           </div>
-
         </div>
       )}
     </div>
