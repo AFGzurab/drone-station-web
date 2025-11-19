@@ -262,6 +262,9 @@ export function DronePage() {
   // ------------------------------------------
   // Отправка команд дрону
   // ------------------------------------------
+  // ------------------------------------------
+  // Отправка команд дрону
+  // ------------------------------------------
   async function handleCommand(command: DroneCommand) {
     if (!drone) return
 
@@ -269,8 +272,18 @@ export function DronePage() {
     setCommandStatus(null)
 
     try {
+      // 1. Отправляем команду дрону (старт, возврат, посадка и т.п.)
       const res = await sendDroneCommand(drone.id, command)
       setCommandStatus(res.message)
+
+      // 2. После успешной команды сразу обновляем историю полётов
+      try {
+        const updatedFlights = await fetchFlightsByDrone(drone.id)
+        setFlights(updatedFlights)
+      } catch (err) {
+        // Логируем, но не ломаем страницу и не затираем статус команды
+        console.error('Не удалось обновить историю полётов для дрона', err)
+      }
     } catch {
       setCommandStatus('Ошибка выполнения команды (фейк)')
     } finally {

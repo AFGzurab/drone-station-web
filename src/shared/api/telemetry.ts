@@ -5,6 +5,7 @@
 
 import { DRONES, type DroneStatus } from './drones'
 import { logSystemEvent } from './events'
+import { completeFlightForDrone } from './flights'
 
 export type DroneTelemetry = {
   droneId: string
@@ -154,12 +155,15 @@ function updateTelemetryTick() {
         drone.status = 'idle'
         drone.mission = 'Ожидание задания'
 
-        // логируем системное событие о возврате
+        // 🔹 помечаем последний активный полёт как завершённый
+        completeFlightForDrone(drone.id)
+
+        // 🔹 логируем системное событие о возврате
         logSystemEvent({
-          level: 'info',
-          source: 'system',
-          title: `Дрон ${drone.code} завершил полёт и вернулся на станцию ${drone.stationId}`,
-        })
+  level: 'info',
+  source: 'monitoring',
+  title: `Дрон ${drone.code} завершил полёт и вернулся на станцию ${drone.stationId}`,
+})
       }
     }
 

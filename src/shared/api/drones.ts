@@ -2,6 +2,12 @@
 
 import { logSystemEvent } from './events'
 import { getSavedUser } from '../auth/auth'
+import {
+  startFlightForDrone,
+  abortFlightForDrone,
+} from './flights'
+
+// --------- Типы ---------
 
 export type DroneStatus =
   | 'idle'
@@ -25,6 +31,13 @@ export type DroneCommand =
   | 'send_on_mission'
   | 'return_to_station'
   | 'emergency_landing'
+
+// Небольшая карта имён станций для красивого лога полётов
+const STATION_NAME_BY_ID: Record<string, string> = {
+  'st-1': 'Станция №1 — Северная',
+  'st-2': 'Станция №2 — Восточная',
+  'st-3': 'Станция №3 — Южная',
+}
 
 // -------------------- Мок-дроны --------------------
 
@@ -80,6 +93,8 @@ export const DRONES: Drone[] = [
     mission: 'Ошибка телеметрии',
   },
 ]
+
+// --------- вспомогалки ---------
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -156,6 +171,14 @@ export async function sendDroneCommand(
         source,
       })
 
+      // 🔹 Стартуем полёт для этого дрона
+      startFlightForDrone({
+        droneId: drone.id,
+        droneName: drone.name,
+        stationId: drone.stationId,
+        stationName: STATION_NAME_BY_ID[drone.stationId] ?? drone.stationId,
+      })
+
       return {
         success: true,
         message: `Дрон ${id}: отправлен на задание (симуляция).`,
@@ -181,6 +204,7 @@ export async function sendDroneCommand(
     }
 
     case 'emergency_landing': {
+      // Экстренная посадка = прерванный полёт
       drone.status = 'idle'
       drone.mission = 'Экстренная посадка выполнена (симуляция)'
       drone.lastContact = 'несколько секунд назад'
@@ -192,6 +216,9 @@ export async function sendDroneCommand(
         level: 'warning',
         source,
       })
+
+      // 🔹 Помечаем последний полёт этого дрона как прерванный
+      abortFlightForDrone(drone.id, 'emergency_landing')
 
       return {
         success: true,
@@ -237,7 +264,6 @@ export function subscribeToDroneTelemetry(
   const drone = DRONES.find((d) => d.id === droneId)
 
   if (!drone) {
-    // если дрона нет — сразу ничего не делаем
     return () => {}
   }
 
