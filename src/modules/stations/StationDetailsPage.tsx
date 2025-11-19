@@ -1,24 +1,27 @@
 // src/modules/stations/StationDetailsPage.tsx
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+
 import {
   fetchStationById,
   sendStationCommand,
   type Station,
-  type StationCommand,
 } from '../../shared/api/stations'
+
 import {
   fetchDronesByStation,
+  sendDroneCommand,
   type Drone,
 } from '../../shared/api/drones'
+
 import {
   fetchWeather,
   type WeatherInfo,
   type WeatherRiskLevel,
 } from '../../shared/api/weather'
 
-// --- вспомогалки для отображения погодного риска ---
+// ----- helpers для погоды -----
 
 function getRiskLabel(level: WeatherRiskLevel): string {
   switch (level) {
@@ -46,8 +49,16 @@ function getRiskBadgeClass(level: WeatherRiskLevel): string {
   }
 }
 
+function formatUpdatedAt(ts: number | undefined): string {
+  if (!ts) return ''
+  const d = new Date(ts)
+  return d.toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export default function StationDetailsPage() {
-  // сразу даём id значение по умолчанию
   const { id = '' } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
@@ -62,12 +73,12 @@ export default function StationDetailsPage() {
   const [commandLoading, setCommandLoading] = useState(false)
   const [commandStatus, setCommandStatus] = useState<string | null>(null)
 
-  // Погода для кластера станций
+  // Погода для кластера станции
   const [weather, setWeather] = useState<WeatherInfo | null>(null)
   const [weatherLoading, setWeatherLoading] = useState(true)
   const [weatherError, setWeatherError] = useState<string | null>(null)
 
-  // --- Загрузка станции и дронов ---
+  // -------- загрузка станции и дронов --------
   useEffect(() => {
     if (!id) return
 
@@ -101,7 +112,7 @@ export default function StationDetailsPage() {
     loadDrones()
   }, [id])
 
-  // --- Загрузка погоды (один раз при заходе на страницу) ---
+  // -------- погода + автообновление --------
   useEffect(() => {
     let cancelled = false
 
@@ -111,6 +122,7 @@ export default function StationDetailsPage() {
           setWeatherLoading(true)
           setWeatherError(null)
         }
+
         const data = await fetchWeather()
         if (!cancelled) {
           setWeather(data)
@@ -127,27 +139,96 @@ export default function StationDetailsPage() {
     }
 
     loadWeather()
+    const idTimer = window.setInterval(loadWeather, 10 * 60 * 1000)
 
     return () => {
       cancelled = true
+      window.clearInterval(idTimer)
     }
   }, [])
 
-  async function handleCommand(command: StationCommand) {
+  // --- простые производные значения ---
+  const battery = station?.batteryAvg ?? station?.batteryLevel ?? 0
+
+  const dronesIdle = useMemo(
+    () => drones.filter((d) => d.status === 'idle'),
+    [drones],
+  )
+
+  const dronesOnMission = useMemo(
+    () => drones.filter((d) => d.status === 'on_mission'),
+    [drones],
+  )
+
+  const commandsDisabled =
+    commandLoading ||
+    weatherLoading || // пока погода грузится — блокируем
+    (!!weather && weather.riskLevel === 'no_fly')
+
+  // -------- массовые команды дронам станции --------
+
+  async function handleMassDroneCommand(kind: 'send' | 'return') {
+    if (!station) return
+
+    setCommandLoading(true)
+    setCommandStatus(null)
+
+    try {
+      const targetDrones =
+        kind === 'send' ? dronesIdle : dronesOnMission
+
+      if (targetDrones.length === 0) {
+        setCommandStatus(
+          kind === 'send'
+            ? 'Нет дронов, ожидающих задания на этой станции.'
+            : 'Нет дронов на задании для возврата.',
+        )
+        return
+      }
+
+      await Promise.all(
+        targetDrones.map((d) =>
+          sendDroneCommand(
+            d.id,
+            kind === 'send' ? 'send_on_mission' : 'return_to_station',
+          ),
+        ),
+      )
+
+      setCommandStatus(
+        kind === 'send'
+          ? `Отправлено дронов на задание: ${targetDrones.length}`
+          : `Отправлено команд на возврат: ${targetDrones.length}`,
+      )
+
+      // обновим список дронов станции после команды
+      const updated = await fetchDronesByStation(station.id)
+      setDrones(updated)
+    } catch {
+      setCommandStatus('Ошибка выполнения команды (симуляция).')
+    } finally {
+      setCommandLoading(false)
+    }
+  }
+
+  // перезапуск станции остаётся станционной командой
+  async function handleStationRestart() {
     if (!id) return
 
     setCommandLoading(true)
     setCommandStatus(null)
 
     try {
-      const res = await sendStationCommand(id, command)
+      const res = await sendStationCommand(id, 'restart')
       setCommandStatus(res.message)
     } catch {
-      setCommandStatus('Ошибка выполнения команды (фейк).')
+      setCommandStatus('Ошибка выполнения команды станции (фейк).')
     } finally {
       setCommandLoading(false)
     }
   }
+
+  // -------- рендер --------
 
   if (stationLoading) {
     return (
@@ -172,11 +253,6 @@ export default function StationDetailsPage() {
       </div>
     )
   }
-
-  const battery = station.batteryAvg ?? station.batteryLevel ?? 0
-
-  const isNoFly = weather?.riskLevel === 'no_fly'
-  const isWarning = weather?.riskLevel === 'warning'
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
@@ -208,7 +284,9 @@ export default function StationDetailsPage() {
                 </p>
               </div>
               <div>
-                <p className="text-slate-400 text-sm mb-1">Средний заряд</p>
+                <p className="text-slate-400 text-sm mb-1">
+                  Средний заряд
+                </p>
                 <div className="flex items-center gap-3">
                   <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
                     <div
@@ -216,7 +294,9 @@ export default function StationDetailsPage() {
                       style={{ width: `${battery}%` }}
                     />
                   </div>
-                  <span className="text-slate-100 text-sm">{battery}%</span>
+                  <span className="text-slate-100 text-sm">
+                    {battery}%
+                  </span>
                 </div>
               </div>
             </div>
@@ -256,7 +336,9 @@ export default function StationDetailsPage() {
             </p>
 
             {dronesLoading && (
-              <p className="text-slate-300 text-sm">Загрузка дронов...</p>
+              <p className="text-slate-300 text-sm">
+                Загрузка дронов...
+              </p>
             )}
 
             {dronesError && (
@@ -282,13 +364,15 @@ export default function StationDetailsPage() {
                       Заряд: {d.battery}%
                     </p>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-slate-400 text-xs">
+
+                  {/* блок миссии + кнопка с фиксированной шириной */}
+                  <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 md:min-w-[260px] md:justify-end">
+                    <div className="text-slate-400 text-xs md:text-right">
                       {d.mission}
                     </div>
                     <button
                       onClick={() => navigate(`/drone/${d.id}`)}
-                      className="px-4 py-1.5 bg-sky-600 hover:bg-sky-700 rounded-xl text-white text-sm transition"
+                      className="px-4 py-1.5 bg-sky-600 hover:bg-sky-700 rounded-xl text-white text-sm font-medium transition whitespace-nowrap min-w-[140px] text-center"
                     >
                       Открыть дрон
                     </button>
@@ -300,97 +384,119 @@ export default function StationDetailsPage() {
         </div>
 
         {/* Правая колонка: команды станции + погода */}
-        <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6 h-fit">
-          <h2 className="text-lg font-semibold mb-4">Команды станции</h2>
+        <div className="space-y-4">
+          <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6 h-fit">
+            <h2 className="text-lg font-semibold mb-4">
+              Команды станции
+            </h2>
 
-          {/* Блок погоды */}
-          <div className="mb-4">
-            <p className="text-slate-400 text-sm mb-1">Погодные условия</p>
-            {weatherLoading && (
-              <p className="text-xs text-slate-300">
-                Загрузка данных о погоде...
+            {/* мини-блок погоды прямо над кнопками */}
+            <div className="mb-4 rounded-xl bg-slate-900/60 border border-slate-700/70 px-4 py-3">
+              <p className="text-xs text-slate-400 mb-1">
+                Погодные условия — кластер станции
+              </p>
+
+              {weatherLoading && (
+                <p className="text-xs text-slate-300">
+                  Загрузка погодных данных...
+                </p>
+              )}
+
+              {!weatherLoading && weatherError && (
+                <p className="text-xs text-rose-300">{weatherError}</p>
+              )}
+
+              {!weatherLoading && !weatherError && weather && (
+                <div className="space-y-1 text-xs text-slate-300">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-semibold">
+                      {weather.tempC}°C
+                    </span>
+                    <span
+                      className={
+                        'px-3 py-0.5 rounded-full text-[11px] ' +
+                        getRiskBadgeClass(weather.riskLevel)
+                      }
+                    >
+                      {getRiskLabel(weather.riskLevel)}
+                    </span>
+                  </div>
+                  <p>
+                    Ветер:{' '}
+                    <span className="font-semibold">
+                      {weather.windSpeedMs.toFixed(1)} м/с
+                    </span>
+                    {weather.windGustMs && (
+                      <>
+                        {' '}
+                        (порывы до{' '}
+                        <span className="font-semibold">
+                          {weather.windGustMs.toFixed(1)} м/с
+                        </span>
+                        )
+                      </>
+                    )}
+                  </p>
+                  {typeof weather.visibilityKm === 'number' && (
+                    <p>
+                      Видимость:{' '}
+                      <span className="font-semibold">
+                        {weather.visibilityKm.toFixed(1)} км
+                      </span>
+                    </p>
+                  )}
+                  <p>Осадки: {weather.description || 'нет данных'}</p>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Обновлено: {formatUpdatedAt(weather.updatedAt)}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <button
+                className="w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-medium transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={commandsDisabled}
+                onClick={() => handleMassDroneCommand('send')}
+              >
+                Отправить дронов на задание
+              </button>
+
+              <button
+                className="w-full py-2 rounded-xl bg-slate-600 hover:bg-slate-700 text-white font-medium transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={commandsDisabled}
+                onClick={() => handleMassDroneCommand('return')}
+              >
+                Вернуть дронов на станцию
+              </button>
+
+              <button
+                className="w-full py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-medium transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={commandLoading}
+                onClick={handleStationRestart}
+              >
+                Перезапустить станцию
+              </button>
+            </div>
+
+            {commandLoading && (
+              <p className="mt-4 text-xs text-slate-300">
+                Выполнение команды...
               </p>
             )}
-            {!weatherLoading && weatherError && (
-              <p className="text-xs text-amber-300">
-                {weatherError} Команды доступны, решение принимает оператор.
+
+            {commandStatus && !commandLoading && (
+              <p className="mt-4 text-xs text-emerald-300">
+                {commandStatus}
               </p>
             )}
-            {!weatherLoading && !weatherError && weather && (
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-200">
-                <span className="font-semibold">{weather.tempC}°C</span>
-                <span
-                  className={
-                    'px-2 py-0.5 rounded-full ' +
-                    getRiskBadgeClass(weather.riskLevel)
-                  }
-                >
-                  {getRiskLabel(weather.riskLevel)}
-                </span>
-              </div>
+
+            {!commandStatus && !commandLoading && (
+              <p className="mt-4 text-xs text-slate-400/80">
+                Статус последних команд появится здесь.
+              </p>
             )}
           </div>
-
-          <div className="space-y-3">
-            <button
-              className="w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-medium transition disabled:opacity-60 disabled:cursor-not-allowed"
-              // 🔴 БЛОКИРУЕМ пока погода грузится + при no_fly
-              disabled={commandLoading || weatherLoading || isNoFly}
-              onClick={() => handleCommand('send')}
-            >
-              Отправить дрон на задание
-            </button>
-
-            <button
-              className="w-full py-2 rounded-xl bg-slate-600 hover:bg-slate-700 text-white font-medium transition disabled:opacity-60"
-              disabled={commandLoading}
-              onClick={() => handleCommand('return')}
-            >
-              Вернуть дрон на станцию
-            </button>
-
-            <button
-              className="w-full py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-medium transition disabled:opacity-60"
-              disabled={commandLoading}
-              onClick={() => handleCommand('restart')}
-            >
-              Перезапустить станцию
-            </button>
-          </div>
-
-          {/* Подсказки по безопасности */}
-          {weatherLoading && (
-            <p className="mt-4 text-xs text-slate-400">
-              Ожидаем данные погоды от метеосервиса. Запуск на задание временно
-              заблокирован.
-            </p>
-          )}
-
-          {!weatherLoading && isNoFly && (
-            <p className="mt-4 text-xs text-rose-300">
-              Нелётная погода. Запуск дронов на задание временно заблокирован
-              по регламенту безопасности.
-            </p>
-          )}
-
-          {!weatherLoading && !isNoFly && isWarning && (
-            <p className="mt-4 text-xs text-amber-300">
-              Погодные условия осложнены. Запуск разрешён, но требует
-              повышенной осторожности.
-            </p>
-          )}
-
-          {commandStatus && (
-            <p className="mt-4 text-xs text-emerald-300">
-              {commandStatus}
-            </p>
-          )}
-
-          {commandLoading && (
-            <p className="mt-4 text-xs text-slate-300">
-              Выполнение команды...
-            </p>
-          )}
         </div>
       </div>
     </div>

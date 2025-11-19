@@ -17,7 +17,10 @@ export type DroneTelemetry = {
 }
 
 // простая карта "станция -> базовые координаты" для старта телеметрии
-const STATION_BASE_COORDS: Record<string, { lat: number; lng: number }> = {
+const STATION_BASE_COORDS: Record<
+  string,
+  { lat: number; lng: number }
+> = {
   'st-1': { lat: 55.03, lng: 82.92 },
   'st-2': { lat: 54.98, lng: 83.05 },
   'st-3': { lat: 54.9, lng: 82.95 },
@@ -86,14 +89,16 @@ function updateTelemetryTick() {
     }
 
     // базовые точки
-    const stationBase = STATION_BASE_COORDS[drone.stationId]
-    const missionTarget = DRONE_MISSION_TARGETS[drone.id] ?? stationBase
+    const stationBase =
+      STATION_BASE_COORDS[drone.stationId] ?? STATION_BASE_COORDS['st-1']
+    const missionTarget =
+      DRONE_MISSION_TARGETS[drone.id] ?? stationBase
 
-    // лёгкое "дрейфование"
-    const moveFactor =
-      drone.status === 'on_mission' || drone.status === 'returning'
-        ? 0.002
-        : 0.0005
+    // лёгкое "дрейфование" координат только для активных состояний
+    let moveFactor = 0
+    if (drone.status === 'on_mission' || drone.status === 'returning') {
+      moveFactor = 0.002
+    }
 
     t.lat += (Math.random() - 0.5) * moveFactor
     t.lng += (Math.random() - 0.5) * moveFactor
@@ -115,7 +120,7 @@ function updateTelemetryTick() {
 
     // высота чуть гуляет
     t.altitude += (Math.random() - 0.5) * 2
-    t.altitude = Math.max(10, Math.min(120, t.altitude))
+    t.altitude = Math.max(0, Math.min(120, t.altitude))
 
     // батарейка у активных дронов медленно падает
     let batteryDelta = 0
@@ -128,14 +133,34 @@ function updateTelemetryTick() {
     drone.battery = Math.round(newBattery)
     t.battery = drone.battery
 
-    // сигнал
+    // сигнал (немного шумим)
     t.signal = Math.max(
       0,
       Math.min(
         100,
-        t.signal + (Math.random() - 0.5) * 5, // немного шумим
+        t.signal + (Math.random() - 0.5) * 5,
       ),
     )
+
+    // --- НОВОЕ: определяем момент посадки при возврате ---
+    if (drone.status === 'returning') {
+      const dLat = t.lat - stationBase.lat
+      const dLng = t.lng - stationBase.lng
+      const dist = Math.sqrt(dLat * dLat + dLng * dLng)
+
+      // порог ≈ 100–150 м в градусах (~0.001)
+      if (dist < 0.001) {
+        // "дрон сел" — фиксируем на станции
+        t.lat = stationBase.lat
+        t.lng = stationBase.lng
+        t.altitude = 0
+        t.speed = 0
+
+        // меняем состояние мок-дрона:
+        drone.status = 'idle'
+        drone.mission = 'Ожидание задания'
+      }
+    }
 
     t.lastUpdate = now
     telemetryByDrone[drone.id] = t
@@ -153,7 +178,10 @@ function getSpeedForStatus(status: DroneStatus): number {
     case 'returning':
       return 30 + Math.random() * 10 // 30–40
     case 'error':
+      return 0
     case 'offline':
+      return 0
+    case 'idle':
     default:
       return 0
   }
@@ -201,7 +229,7 @@ export function getTelemetryForDrone(
   return telemetryByDrone[droneId] ?? null
 }
 
-// координаты точки задания для дрона (если она есть)
+// для карты: получить точку назначения дрона (если есть)
 export function getMissionTarget(
   droneId: string,
 ): { lat: number; lng: number } | null {
