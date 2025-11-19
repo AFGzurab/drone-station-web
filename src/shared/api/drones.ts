@@ -1,5 +1,8 @@
 // src/shared/api/drones.ts
 
+import { logSystemEvent } from './events'
+import { getSavedUser } from '../auth/auth'
+
 export type DroneStatus =
   | 'idle'
   | 'on_mission'
@@ -82,6 +85,21 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function getCurrentUserContext() {
+  const user = getSavedUser()
+  if (!user) {
+    return {
+      label: 'Система',
+      source: 'system' as const,
+    }
+  }
+
+  return {
+    label: `${user.username} (${user.role})`,
+    source: user.role as 'admin' | 'operator',
+  }
+}
+
 // -------------------- REST-подобные функции --------------------
 
 // Все дроны (для карты, админки и т.п.)
@@ -91,7 +109,9 @@ export async function fetchAllDrones(): Promise<Drone[]> {
 }
 
 // Дроны по станции
-export async function fetchDronesByStation(stationId: string): Promise<Drone[]> {
+export async function fetchDronesByStation(
+  stationId: string,
+): Promise<Drone[]> {
   await delay(200)
   return DRONES.filter((d) => d.stationId === stationId)
 }
@@ -103,7 +123,7 @@ export async function fetchDroneById(id: string): Promise<Drone | null> {
   return drone ?? null
 }
 
-// Отправка команды дрону (фейк + изменение состояния в мок-данных)
+// Отправка команды дрону (изменяем мок-данные + пишем события)
 export async function sendDroneCommand(
   id: string,
   command: DroneCommand,
@@ -111,48 +131,86 @@ export async function sendDroneCommand(
   await delay(500)
 
   const drone = DRONES.find((d) => d.id === id)
+  const { label: actorLabel, source } = getCurrentUserContext()
+
+  if (!drone) {
+    const msg = `Попытка отправить команду "${command}" несуществующему дрону ${id}.`
+    logSystemEvent({
+      title: msg,
+      level: 'error',
+      source,
+    })
+    return { success: false, message: msg }
+  }
 
   switch (command) {
-    case 'send_on_mission':
-      if (drone) {
-        drone.status = 'on_mission'
-        drone.mission = 'Выполнение задания (симуляция)'
-        drone.lastContact = 'несколько секунд назад'
-      }
+    case 'send_on_mission': {
+      drone.status = 'on_mission'
+      drone.mission = 'Выполнение задания (симуляция)'
+      drone.lastContact = 'несколько секунд назад'
+
+      const msg = `Оператор ${actorLabel} запустил дрона ${drone.code} со станции ${drone.stationId}.`
+      logSystemEvent({
+        title: msg,
+        level: 'info',
+        source,
+      })
+
       return {
         success: true,
-        message: `Дрон ${id}: отправлен на задание (фейк).`,
+        message: `Дрон ${id}: отправлен на задание (симуляция).`,
       }
+    }
 
-    case 'return_to_station':
-      if (drone) {
-        drone.status = 'returning'
-        drone.mission = 'Возвращается на станцию (симуляция)'
-        drone.lastContact = 'несколько секунд назад'
-      }
+    case 'return_to_station': {
+      drone.status = 'returning'
+      drone.mission = 'Возвращается на станцию (симуляция)'
+      drone.lastContact = 'несколько секунд назад'
+
+      const msg = `Оператор ${actorLabel} отправил дрона ${drone.code} на возврат к станции ${drone.stationId}.`
+      logSystemEvent({
+        title: msg,
+        level: 'info',
+        source,
+      })
+
       return {
         success: true,
-        message: `Дрон ${id}: возвращается на станцию (фейк).`,
+        message: `Дрон ${id}: возвращается на станцию (симуляция).`,
       }
+    }
 
-    case 'emergency_landing':
-      if (drone) {
-        drone.status = 'idle'
-        drone.mission = 'Экстренная посадка выполнена (симуляция)'
-        drone.lastContact = 'несколько секунд назад'
-        // немного просаживаем батарею
-        drone.battery = Math.max(0, drone.battery - 5)
-      }
+    case 'emergency_landing': {
+      drone.status = 'idle'
+      drone.mission = 'Экстренная посадка выполнена (симуляция)'
+      drone.lastContact = 'несколько секунд назад'
+      drone.battery = Math.max(0, drone.battery - 5)
+
+      const msg = `Оператор ${actorLabel} выполнил экстренную посадку дрона ${drone.code}.`
+      logSystemEvent({
+        title: msg,
+        level: 'warning',
+        source,
+      })
+
       return {
         success: true,
-        message: `Дрон ${id}: выполнена экстренная посадка (фейк).`,
+        message: `Дрон ${id}: выполнена экстренная посадка (симуляция).`,
       }
+    }
 
-    default:
+    default: {
+      const msg = `Дрон ${id}: неизвестная команда "${command}".`
+      logSystemEvent({
+        title: msg,
+        level: 'error',
+        source,
+      })
       return {
         success: false,
-        message: `Дрон ${id}: неизвестная команда.`,
+        message: msg,
       }
+    }
   }
 }
 
@@ -163,6 +221,10 @@ export type DroneTelemetryCallback = (drone: Drone) => void
 
 // храним интервалы телеметрии по id дрона
 const telemetryTimers = new Map<string, number>()
+
+// чтобы не спамить одинаковыми событиями
+const notifiedLowBattery = new Set<string>()
+const notifiedError = new Set<string>()
 
 /**
  * Подписка на "телеметрию" дрона.
@@ -185,7 +247,7 @@ export function subscribeToDroneTelemetry(
   // если уже есть таймер для этого дрона — чистим
   const existing = telemetryTimers.get(droneId)
   if (existing) {
-    clearInterval(existing)
+    window.clearInterval(existing)
   }
 
   const timerId = window.setInterval(() => {
@@ -193,18 +255,38 @@ export function subscribeToDroneTelemetry(
     if (!d) return
 
     // лёгкая симуляция изменения батареи и статуса
-if (d.status === 'on_mission' || d.status === 'returning') {
-  const delta = Math.floor(Math.random() * 3) + 1 // 1–3%
-  d.battery = Math.max(0, d.battery - delta)
-  d.lastContact = 'несколько секунд назад'
+    if (d.status === 'on_mission' || d.status === 'returning') {
+      const delta = Math.floor(Math.random() * 3) + 1 // 1–3%
+      d.battery = Math.max(0, d.battery - delta)
+      d.lastContact = 'несколько секунд назад'
 
-  if (d.battery <= 10) {
-    d.status = 'error'
-    d.mission = 'Критический уровень заряда (симуляция)'
-  }
-} else if (d.status === 'idle') {
-  d.lastContact = '1 минуту назад'
-}
+      // предупреждение о низком заряде
+      if (d.battery <= 30 && !notifiedLowBattery.has(d.id)) {
+        notifiedLowBattery.add(d.id)
+        logSystemEvent({
+          level: 'warning',
+          source: 'monitoring',
+          title: `Низкий заряд дрона ${d.code} во время полёта (${d.battery}%)`,
+        })
+      }
+
+      // переход в статус ошибка при критическом заряде
+      if (d.battery <= 10 && (d.status as DroneStatus) !== 'error') {
+        d.status = 'error'
+        d.mission = 'Критический уровень заряда (симуляция)'
+
+        if (!notifiedError.has(d.id)) {
+          notifiedError.add(d.id)
+          logSystemEvent({
+            level: 'error',
+            source: 'monitoring',
+            title: `Дрон ${d.code} перешёл в статус "Ошибка" из-за критического заряда (${d.battery}%)`,
+          })
+        }
+      }
+    } else if (d.status === 'idle') {
+      d.lastContact = '1 минуту назад'
+    }
 
     // отдаём копию объекта, чтобы не мутировать состояние React напрямую
     callback({ ...d })
@@ -215,7 +297,7 @@ if (d.status === 'on_mission' || d.status === 'returning') {
   return () => {
     const t = telemetryTimers.get(droneId)
     if (t) {
-      clearInterval(t)
+      window.clearInterval(t)
       telemetryTimers.delete(droneId)
     }
   }

@@ -1,128 +1,187 @@
 // src/shared/api/stations.ts
 
-import { DRONES, type Drone } from './drones'
+import { logSystemEvent } from './events'
+import { getSavedUser } from '../auth/auth'
+
+// ------------------------------------
+// Типы
+// ------------------------------------
 
 export type StationStatus = 'online' | 'offline' | 'error'
 
 export type Station = {
   id: string
   name: string
+  coords: { lat: number; lng: number }
   status: StationStatus
-  // Координаты станции (для списка, карты и деталей)
-  coords: {
-    lat: number
-    lng: number
-  }
-  // Дроны: активные / всего
   dronesActive: number
   dronesTotal: number
-  // Средний заряд по станции
-  batteryAvg: number
-  // Оставляем batteryLevel для обратной совместимости (admin/старый код)
+  batteryAvg?: number
   batteryLevel?: number
 }
 
-// Команды станции (фейковые)
-export type StationCommand = 'send' | 'return' | 'restart'
+// ------------------------------------
+// Вспомогалки
+// ------------------------------------
 
-export async function sendStationCommand(
-  stationId: string,
-  command: StationCommand,
-): Promise<{ message: string }> {
-  // Фейковая задержка, имитация запроса к API
-  await new Promise((resolve) => setTimeout(resolve, 500))
-
-  let message = 'Команда выполнена (фейк).'
-
-  switch (command) {
-    case 'send':
-      message = 'Команда отправки дрона на задание выполнена (фейк).'
-      break
-    case 'return':
-      message = 'Команда возврата дрона на станцию выполнена (фейк).'
-      break
-    case 'restart':
-      message = 'Команда перезапуска станции выполнена (фейк).'
-      break
-  }
-
-  console.log('[sendStationCommand]', { stationId, command, message })
-  return { message }
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// -------------------- Базовые мок-станции --------------------
+function getCurrentUserContext() {
+  const user = getSavedUser()
+  if (!user) {
+    return {
+      label: 'Система',
+      source: 'system' as const,
+    }
+  }
 
-const baseStations: Station[] = [
+  return {
+    label: `${user.username} (${user.role})`,
+    source: user.role as 'admin' | 'operator',
+  }
+}
+
+// ------------------------------------
+// Мок-станции
+// ------------------------------------
+
+export const STATIONS: Station[] = [
   {
     id: 'st-1',
     name: 'Станция №1 — Северная',
-    status: 'online',
     coords: { lat: 55.03, lng: 82.92 },
-    dronesActive: 0,
-    dronesTotal: 0,
-    batteryAvg: 0,
+    status: 'online',
+    dronesActive: 2,
+    dronesTotal: 3,
+    batteryAvg: 65,
   },
   {
     id: 'st-2',
     name: 'Станция №2 — Восточная',
+    coords: { lat: 55.04, lng: 82.98 },
     status: 'offline',
-    coords: { lat: 54.98, lng: 83.05 },
     dronesActive: 0,
-    dronesTotal: 0,
-    batteryAvg: 0,
+    dronesTotal: 1,
+    batteryAvg: 20,
   },
   {
     id: 'st-3',
     name: 'Станция №3 — Южная',
+    coords: { lat: 55.00, lng: 82.90 },
     status: 'error',
-    coords: { lat: 54.9, lng: 82.95 },
     dronesActive: 0,
-    dronesTotal: 0,
-    batteryAvg: 0,
+    dronesTotal: 1,
+    batteryAvg: 12,
   },
 ]
 
-// ---------- Вспомогалка для пересчёта агрегатов по дронам ----------
+// ------------------------------------
+// REST functions
+// ------------------------------------
 
-function computeAggregatesForStation(stationId: string) {
-  const drones: Drone[] = DRONES.filter((d) => d.stationId === stationId)
-
-  const dronesTotal = drones.length
-  const dronesActive = drones.filter((d) =>
-    ['on_mission', 'returning'].includes(d.status),
-  ).length
-
-  const batteryAvg =
-    dronesTotal > 0
-      ? Math.round(drones.reduce((sum, d) => sum + d.battery, 0) / dronesTotal)
-      : 0
-
-  return { dronesTotal, dronesActive, batteryAvg }
+export async function fetchStations(): Promise<Station[]> {
+  await delay(200)
+  return STATIONS
 }
 
-function buildStationWithAggregates(base: Station): Station {
-  const { dronesTotal, dronesActive, batteryAvg } =
-    computeAggregatesForStation(base.id)
+export async function fetchStationById(id: string): Promise<Station | null> {
+  await delay(200)
+  const st = STATIONS.find((s) => s.id === id)
+  return st ?? null
+}
 
-  return {
-    ...base,
-    dronesTotal,
-    dronesActive,
-    batteryAvg,
-    batteryLevel: batteryAvg, // чтобы старый код, который смотрит на batteryLevel, тоже работал
+// ------------------------------------
+// Команда станции + системные события
+// ------------------------------------
+
+export async function sendStationCommand(
+  id: string,
+  command: 'restart',
+): Promise<{ success: boolean; message: string }> {
+  await delay(500)
+
+  const station = STATIONS.find((s) => s.id === id)
+  const { label: actorLabel, source } = getCurrentUserContext()
+
+  if (!station) {
+    const message = `Попытка выполнить команду "${command}" для несуществующей станции ${id}.`
+
+    logSystemEvent({
+      title: message,
+      level: 'error',
+      source,
+    })
+
+    return {
+      success: false,
+      message,
+    }
+  }
+
+  switch (command) {
+    case 'restart': {
+      // Логируем системное событие
+      logSystemEvent({
+        title: `Оператор ${actorLabel} перезапустил станцию ${station.name}.`,
+        level: 'info',
+        source,
+      })
+
+      // слегка изменим состояние станции (симуляция)
+      station.status = 'online'
+      station.batteryAvg = Math.min(100, (station.batteryAvg ?? 0) + 5)
+
+
+      return {
+        success: true,
+        message: `Станция ${station.name} успешно перезапущена (симуляция).`,
+      }
+    }
+
+    default: {
+      const message = `Станция ${id}: неизвестная команда "${command}".`
+
+      logSystemEvent({
+        title: message,
+        level: 'error',
+        source,
+      })
+
+      return {
+        success: false,
+        message,
+      }
+    }
   }
 }
 
-// Получить все станции
-export async function fetchStations(): Promise<Station[]> {
-  await new Promise((resolve) => setTimeout(resolve, 150))
-  return baseStations.map(buildStationWithAggregates)
-}
+// ------------------------------------
+// Смена статуса станции = событие
+// ------------------------------------
 
-// Получить одну станцию по id
-export async function fetchStationById(id: string): Promise<Station | null> {
-  await new Promise((resolve) => setTimeout(resolve, 120))
-  const base = baseStations.find((s) => s.id === id)
-  if (!base) return null
-  return buildStationWithAggregates(base)
+export function updateStationStatus(
+  id: string,
+  newStatus: StationStatus,
+) {
+  const st = STATIONS.find((s) => s.id === id)
+
+  if (!st) return
+
+  if (st.status !== newStatus) {
+    // Логируем событие при смене статуса
+    logSystemEvent({
+      title: `Статус станции ${st.name} изменён: ${st.status} → ${newStatus}.`,
+      level:
+        newStatus === 'online'
+          ? 'info'
+          : newStatus === 'offline'
+          ? 'warning'
+          : 'error',
+      source: 'system',
+    })
+
+    st.status = newStatus
+  }
 }

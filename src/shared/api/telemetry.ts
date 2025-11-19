@@ -4,6 +4,7 @@
 // Используется во всём приложении через подписку.
 
 import { DRONES, type DroneStatus } from './drones'
+import { logSystemEvent } from './events'
 
 export type DroneTelemetry = {
   droneId: string
@@ -17,10 +18,7 @@ export type DroneTelemetry = {
 }
 
 // простая карта "станция -> базовые координаты" для старта телеметрии
-const STATION_BASE_COORDS: Record<
-  string,
-  { lat: number; lng: number }
-> = {
+const STATION_BASE_COORDS: Record<string, { lat: number; lng: number }> = {
   'st-1': { lat: 55.03, lng: 82.92 },
   'st-2': { lat: 54.98, lng: 83.05 },
   'st-3': { lat: 54.9, lng: 82.95 },
@@ -91,8 +89,7 @@ function updateTelemetryTick() {
     // базовые точки
     const stationBase =
       STATION_BASE_COORDS[drone.stationId] ?? STATION_BASE_COORDS['st-1']
-    const missionTarget =
-      DRONE_MISSION_TARGETS[drone.id] ?? stationBase
+    const missionTarget = DRONE_MISSION_TARGETS[drone.id] ?? stationBase
 
     // лёгкое "дрейфование" координат только для активных состояний
     let moveFactor = 0
@@ -136,20 +133,17 @@ function updateTelemetryTick() {
     // сигнал (немного шумим)
     t.signal = Math.max(
       0,
-      Math.min(
-        100,
-        t.signal + (Math.random() - 0.5) * 5,
-      ),
+      Math.min(100, t.signal + (Math.random() - 0.5) * 5),
     )
 
-    // --- НОВОЕ: определяем момент посадки при возврате ---
+    // --- Посадка при возврате на станцию ---
     if (drone.status === 'returning') {
       const dLat = t.lat - stationBase.lat
       const dLng = t.lng - stationBase.lng
       const dist = Math.sqrt(dLat * dLat + dLng * dLng)
 
-      // порог ≈ 100–150 м в градусах (~0.001)
-      if (dist < 0.001) {
+      // порог ≈ 150–200 м в градусах (~0.002)
+      if (dist < 0.002) {
         // "дрон сел" — фиксируем на станции
         t.lat = stationBase.lat
         t.lng = stationBase.lng
@@ -159,6 +153,13 @@ function updateTelemetryTick() {
         // меняем состояние мок-дрона:
         drone.status = 'idle'
         drone.mission = 'Ожидание задания'
+
+        // логируем системное событие о возврате
+        logSystemEvent({
+          level: 'info',
+          source: 'system',
+          title: `Дрон ${drone.code} завершил полёт и вернулся на станцию ${drone.stationId}`,
+        })
       }
     }
 

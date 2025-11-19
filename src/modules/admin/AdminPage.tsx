@@ -2,124 +2,22 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+
 import { fetchStations, type Station } from '../../shared/api/stations'
 import {
   fetchWeather,
   type WeatherInfo,
   type WeatherRiskLevel,
 } from '../../shared/api/weather'
+import {
+  getRecentEvents,
+  subscribeToEvents,
+  type SystemEvent,
+  type SystemEventLevel,
+  type SystemEventSource,
+} from '../../shared/api/events'
 
-type SystemEventLevel = 'info' | 'warning' | 'error'
-
-type SystemEvent = {
-  id: number
-  time: string
-  title: string
-  source: string
-  level: SystemEventLevel
-}
-
-// Побольше событий для «массовки»
-const SYSTEM_EVENTS: SystemEvent[] = [
-  {
-    id: 1,
-    time: '2025-11-16 21:05',
-    title: 'Оператор operator запустил дрона со станции №1',
-    source: 'operator',
-    level: 'info',
-  },
-  {
-    id: 2,
-    time: '2025-11-16 20:59',
-    title: 'Дрон DR-103 взял курс на станцию №1 (возврат)',
-    source: 'monitoring',
-    level: 'info',
-  },
-  {
-    id: 3,
-    time: '2025-11-16 20:56',
-    title: 'Низкий заряд дрона DR-103 во время возврата (47%)',
-    source: 'monitoring',
-    level: 'warning',
-  },
-  {
-    id: 4,
-    time: '2025-11-16 20:48',
-    title: 'Низкий средний заряд на станции №3 (34%)',
-    source: 'system',
-    level: 'warning',
-  },
-  {
-    id: 5,
-    time: '2025-11-16 20:12',
-    title: 'Станция №3 перешла в статус "Ошибка"',
-    source: 'system',
-    level: 'error',
-  },
-  {
-    id: 6,
-    time: '2025-11-16 19:55',
-    title: 'Дрон DR-101 успешно завершил задание и вернулся на станцию №1',
-    source: 'system',
-    level: 'info',
-  },
-  {
-    id: 7,
-    time: '2025-11-16 19:40',
-    title: 'Оператор admin изменил режим работы станции №2',
-    source: 'admin',
-    level: 'info',
-  },
-  {
-    id: 8,
-    time: '2025-11-16 19:10',
-    title: 'Дрон DR-301: длительное отсутствие телеметрии (более 5 минут)',
-    source: 'monitoring',
-    level: 'warning',
-  },
-  {
-    id: 9,
-    time: '2025-11-16 18:58',
-    title: 'Станция №2 перешла в статус Offline',
-    source: 'system',
-    level: 'warning',
-  },
-  {
-    id: 10,
-    time: '2025-11-16 18:30',
-    title: 'Заряд дрона DR-102 опустился ниже 15% во время задания',
-    source: 'monitoring',
-    level: 'error',
-  },
-  {
-    id: 11,
-    time: '2025-11-16 18:05',
-    title: 'Оператор operator отменил задание для дрона DR-201',
-    source: 'operator',
-    level: 'info',
-  },
-  {
-    id: 12,
-    time: '2025-11-16 17:42',
-    title: 'Станция №1: успешная калибровка навигационных модулей',
-    source: 'service',
-    level: 'info',
-  },
-  {
-    id: 13,
-    time: '2025-11-16 17:15',
-    title: 'Массовая перезагрузка дронов на станции №3',
-    source: 'admin',
-    level: 'warning',
-  },
-  {
-    id: 14,
-    time: '2025-11-16 16:50',
-    title: 'Неудачная попытка авторизации под пользователем operator',
-    source: 'security',
-    level: 'warning',
-  },
-]
+// ----- helpers для погоды -----
 
 function getRiskLabel(level: WeatherRiskLevel): string {
   switch (level) {
@@ -156,8 +54,12 @@ function formatUpdatedAt(ts: number | undefined): string {
   })
 }
 
+type LevelFilter = 'all' | SystemEventLevel
+type SourceFilter = 'all' | SystemEventSource
+
 export default function AdminPage() {
   const navigate = useNavigate()
+
   const [stations, setStations] = useState<Station[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -166,6 +68,13 @@ export default function AdminPage() {
   const [weather, setWeather] = useState<WeatherInfo | null>(null)
   const [weatherLoading, setWeatherLoading] = useState(true)
   const [weatherError, setWeatherError] = useState<string | null>(null)
+
+  // Системные события (живые)
+  const [events, setEvents] = useState<SystemEvent[]>([])
+
+  // Фильтры
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>('all')
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
 
   // Подсчёт количества станций по статусам
   const onlineCount = stations.filter((s) => s.status === 'online').length
@@ -214,9 +123,7 @@ export default function AdminPage() {
       }
     }
 
-    // первый запрос сразу
     loadWeather()
-    // последующие — каждые 10 минут
     const id = window.setInterval(loadWeather, 5 * 60 * 1000)
 
     return () => {
@@ -225,25 +132,51 @@ export default function AdminPage() {
     }
   }, [])
 
+  // --- Подписка на системные события ---
+  useEffect(() => {
+    setEvents(getRecentEvents(50))
+
+    const unsubscribe = subscribeToEvents((ev) => {
+      setEvents((prev) => {
+        const next = [ev, ...prev]
+        return next.slice(0, 50)
+      })
+    })
+
+    return () => {
+      unsubscribe()
+    }
+  }, [])
+
   const stats = useMemo(() => {
     const total = stations.length
-    const online = stations.filter((s) => s.status === 'online').length
 
     const avgBattery =
       stations.length > 0
         ? Math.round(
-            stations.reduce((sum, s) => sum + (s.batteryAvg ?? 0), 0) /
-              stations.length,
+            stations.reduce(
+              (sum, s) => sum + (s.batteryAvg ?? s.batteryLevel ?? 0),
+              0,
+            ) / stations.length,
           )
         : 0
 
     const problem = stations.filter((s) => s.status !== 'online').length
 
-    return { total, online, problem, avgBattery }
+    return { total, problem, avgBattery }
   }, [stations])
 
   const onlinePercent =
     stats.total > 0 ? Math.round((onlineCount / stats.total) * 100) : 0
+
+  // --- Фильтрация событий по уровню и источнику ---
+  const filteredEvents = useMemo(() => {
+    return events.filter((ev) => {
+      if (levelFilter !== 'all' && ev.level !== levelFilter) return false
+      if (sourceFilter !== 'all' && ev.source !== sourceFilter) return false
+      return true
+    })
+  }, [events, levelFilter, sourceFilter])
 
   if (loading) {
     return (
@@ -291,7 +224,6 @@ export default function AdminPage() {
               </span>
             </div>
 
-            {/* Полоска процента online */}
             <div className="mt-3">
               <div className="h-2 w-full rounded-full bg-slate-700 overflow-hidden">
                 <div
@@ -305,7 +237,6 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Разбивка по статусам */}
           <div className="mt-4 flex flex-wrap gap-2 text-xs">
             <span className="px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-300">
               Online: {onlineCount}
@@ -344,7 +275,7 @@ export default function AdminPage() {
 
             {weatherLoading && (
               <p className="mt-3 text-sm text-slate-300">
-                Загрузка данных о погоде...
+                Загрузка данных о погоде.
               </p>
             )}
 
@@ -401,15 +332,17 @@ export default function AdminPage() {
             )}
           </div>
 
-          <div className="mt-3 text-[11px] text-slate-500">
-            Обновлено: {formatUpdatedAt(weather?.updatedAt)}
-          </div>
+          {weather && (
+            <p className="mt-3 text-[11px] text-slate-500">
+              Обновлено: {formatUpdatedAt(weather.updatedAt)}
+            </p>
+          )}
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)]">
         {/* Таблица станций */}
-        <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6">
+        <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6 min-h-[360px] flex flex-col">
           <h2 className="text-lg font-semibold mb-1">Станции</h2>
           <p className="text-slate-400 text-sm mb-4">
             Сводка по всем дрон-станциям.
@@ -489,14 +422,67 @@ export default function AdminPage() {
         </div>
 
         {/* Системные события */}
-        <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6 flex flex-col">
+        <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6 flex flex-col min-h-[360px]">
           <h2 className="text-lg font-semibold mb-1">Системные события</h2>
           <p className="text-slate-400 text-sm mb-4">
             Последние операции и уведомления.
           </p>
 
+          {/* Панель фильтров */}
+          <div className="mb-4 flex flex-wrap gap-3 items-center justify-between text-xs">
+            <div className="flex gap-1 items-center flex-wrap">
+              <span className="text-slate-400 mr-1">Уровень:</span>
+              {(
+                [
+                  { key: 'all', label: 'Все' },
+                  { key: 'info', label: 'INFO' },
+                  { key: 'warning', label: 'WARNING' },
+                  { key: 'error', label: 'ERROR' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setLevelFilter(opt.key)}
+                  className={
+                    'px-2 py-1 rounded-full border text-[11px] transition ' +
+                    (levelFilter === opt.key
+                      ? 'border-sky-400 bg-sky-500/10 text-sky-300'
+                      : 'border-slate-600 text-slate-300 hover:border-slate-400')
+                  }
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-2 items-center">
+              <span className="text-slate-400 text-[11px]">Источник:</span>
+              <select
+                value={sourceFilter}
+                onChange={(e) =>
+                  setSourceFilter(e.target.value as SourceFilter)
+                }
+                className="bg-slate-900 border border-slate-600 text-[11px] rounded-lg px-2 py-1 text-slate-100 focus:outline-none focus:border-sky-400"
+              >
+                <option value="all">Все</option>
+                <option value="operator">operator</option>
+                <option value="admin">admin</option>
+                <option value="system">system</option>
+                <option value="monitoring">monitoring</option>
+                <option value="security">security</option>
+                <option value="service">service</option>
+              </select>
+            </div>
+          </div>
+
           <div className="space-y-2 overflow-y-auto pr-2 max-h-96 scroll-dark">
-            {SYSTEM_EVENTS.map((ev) => (
+            {filteredEvents.length === 0 && (
+              <p className="text-slate-500 text-sm">
+                Нет событий, подходящих под выбранные фильтры.
+              </p>
+            )}
+
+            {filteredEvents.map((ev) => (
               <div
                 key={ev.id}
                 className="rounded-xl bg-slate-900/50 border border-slate-800/70 px-4 py-2.5 text-sm flex flex-col gap-1 shadow-sm shadow-slate-950/40"

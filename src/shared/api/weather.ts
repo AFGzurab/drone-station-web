@@ -3,6 +3,8 @@
 // Реальные погодные данные через Open-Meteo (без API-ключей)
 // и совместимый интерфейс под AdminPage (fetchWeather, WeatherInfo, WeatherRiskLevel).
 
+import { logSystemEvent } from './events'
+
 export type WeatherRiskLevel = 'ok' | 'warning' | 'no_fly'
 
 export type WeatherInfo = {
@@ -79,6 +81,52 @@ function evaluateRisk(params: {
 }
 
 // -------------------------------------------------
+// Трекинг изменений погоды для системных событий
+// -------------------------------------------------
+
+let lastRiskLevel: WeatherRiskLevel | null = null
+
+function maybeLogWeatherEvent(
+  newLevel: WeatherRiskLevel,
+  description: string,
+) {
+  // если ничего не поменялось — молчим
+  if (newLevel === lastRiskLevel) return
+
+  // переход в осложнённые условия
+  if (newLevel === 'warning') {
+    logSystemEvent({
+      level: 'warning',
+      source: 'system',
+      title: `Погодные условия осложнены: ${description}`,
+    })
+  }
+
+  // переход в нелётную погоду
+  if (newLevel === 'no_fly') {
+    logSystemEvent({
+      level: 'warning',
+      source: 'system',
+      title: `Нелётная погода в районе кластера станций: ${description}`,
+    })
+  }
+
+  // если было плохо и стало ок — зафиксируем нормализацию
+  if (
+    newLevel === 'ok' &&
+    (lastRiskLevel === 'warning' || lastRiskLevel === 'no_fly')
+  ) {
+    logSystemEvent({
+      level: 'info',
+      source: 'system',
+      title: 'Погодные условия нормализовались (лётная погода).',
+    })
+  }
+
+  lastRiskLevel = newLevel
+}
+
+// -------------------------------------------------
 // Основная функция, которую ждёт AdminPage
 // -------------------------------------------------
 
@@ -149,6 +197,9 @@ export async function fetchWeather(
   })
 
   const updatedAt = new Date(current.time).getTime()
+
+  // --- НОВОЕ: создаём системное событие при изменении лётности погоды ---
+  maybeLogWeatherEvent(riskLevel, description)
 
   return {
     tempC,
