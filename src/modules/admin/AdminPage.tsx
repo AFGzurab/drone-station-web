@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchStations, type Station } from '../../shared/api/stations'
+import {
+  fetchWeather,
+  type WeatherInfo,
+  type WeatherRiskLevel,
+} from '../../shared/api/weather'
 
 type SystemEventLevel = 'info' | 'warning' | 'error'
 
@@ -116,16 +121,58 @@ const SYSTEM_EVENTS: SystemEvent[] = [
   },
 ]
 
+function getRiskLabel(level: WeatherRiskLevel): string {
+  switch (level) {
+    case 'ok':
+      return 'Условия нормальные'
+    case 'warning':
+      return 'Условия осложнены'
+    case 'no_fly':
+      return 'Нелётная погода'
+    default:
+      return level
+  }
+}
+
+function getRiskBadgeClass(level: WeatherRiskLevel): string {
+  switch (level) {
+    case 'ok':
+      return 'bg-emerald-500/15 text-emerald-300'
+    case 'warning':
+      return 'bg-amber-500/15 text-amber-300'
+    case 'no_fly':
+      return 'bg-rose-500/20 text-rose-300'
+    default:
+      return 'bg-slate-500/20 text-slate-200'
+  }
+}
+
+function formatUpdatedAt(ts: number | undefined): string {
+  if (!ts) return ''
+  const d = new Date(ts)
+  return d.toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export default function AdminPage() {
   const navigate = useNavigate()
   const [stations, setStations] = useState<Station[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Погода
+  const [weather, setWeather] = useState<WeatherInfo | null>(null)
+  const [weatherLoading, setWeatherLoading] = useState(true)
+  const [weatherError, setWeatherError] = useState<string | null>(null)
+
   // Подсчёт количества станций по статусам
   const onlineCount = stations.filter((s) => s.status === 'online').length
   const errorCount = stations.filter((s) => s.status === 'error').length
   const offlineCount = stations.filter((s) => s.status === 'offline').length
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
+  // --- Загрузка станций ---
   useEffect(() => {
     async function load() {
       try {
@@ -141,10 +188,46 @@ export default function AdminPage() {
     load()
   }, [])
 
+  // --- Загрузка и автообновление погоды ---
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadWeather() {
+      try {
+        if (!cancelled) {
+          setWeatherLoading(true)
+          setWeatherError(null)
+        }
+
+        const data = await fetchWeather()
+        if (!cancelled) {
+          setWeather(data)
+        }
+      } catch {
+        if (!cancelled) {
+          setWeatherError('Не удалось загрузить данные погоды.')
+        }
+      } finally {
+        if (!cancelled) {
+          setWeatherLoading(false)
+        }
+      }
+    }
+
+    // первый запрос сразу
+    loadWeather()
+    // последующие — каждые 10 минут
+    const id = window.setInterval(loadWeather, 5 * 60 * 1000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [])
+
   const stats = useMemo(() => {
     const total = stations.length
     const online = stations.filter((s) => s.status === 'online').length
-    const problem = stations.filter((s) => s.status !== 'online').length
 
     const avgBattery =
       stations.length > 0
@@ -153,6 +236,8 @@ export default function AdminPage() {
               stations.length,
           )
         : 0
+
+    const problem = stations.filter((s) => s.status !== 'online').length
 
     return { total, online, problem, avgBattery }
   }, [stations])
@@ -184,13 +269,14 @@ export default function AdminPage() {
       </p>
 
       {/* Верхние карточки-сводки */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {/* Всего станций */}
         <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-5">
           <p className="text-slate-400 text-sm">Всего станций</p>
           <p className="mt-2 text-3xl font-semibold">{stats.total}</p>
         </div>
 
-        {/* Карточка "Статус станций" */}
+        {/* Статус станций */}
         <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-5 flex flex-col justify-between">
           <div>
             <h3 className="text-lg font-semibold text-white">Статус станций</h3>
@@ -233,6 +319,7 @@ export default function AdminPage() {
           </div>
         </div>
 
+        {/* Средний заряд */}
         <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-5">
           <p className="text-slate-400 text-sm">Средний заряд станций</p>
           <div className="mt-2 flex items-center gap-3">
@@ -242,7 +329,80 @@ export default function AdminPage() {
                 style={{ width: `${stats.avgBattery}%` }}
               />
             </div>
-            <span className="text-xl font-semibold">{stats.avgBattery}%</span>
+            <span className="text-xl font-semibold">
+              {stats.avgBattery}%
+            </span>
+          </div>
+        </div>
+
+        {/* Погодные условия */}
+        <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <p className="text-slate-400 text-sm">
+              Погодные условия — кластер станций
+            </p>
+
+            {weatherLoading && (
+              <p className="mt-3 text-sm text-slate-300">
+                Загрузка данных о погоде...
+              </p>
+            )}
+
+            {!weatherLoading && weatherError && (
+              <p className="mt-3 text-sm text-rose-300">{weatherError}</p>
+            )}
+
+            {!weatherLoading && !weatherError && weather && (
+              <>
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="text-3xl font-semibold">
+                    {weather.tempC}°C
+                  </span>
+                  <span
+                    className={
+                      'text-xs px-3 py-1 rounded-full ' +
+                      getRiskBadgeClass(weather.riskLevel)
+                    }
+                  >
+                    {getRiskLabel(weather.riskLevel)}
+                  </span>
+                </div>
+
+                <div className="mt-3 space-y-1 text-xs text-slate-300">
+                  <p>
+                    Ветер:{' '}
+                    <span className="font-semibold">
+                      {weather.windSpeedMs.toFixed(1)} м/с
+                    </span>
+                    {weather.windGustMs && (
+                      <>
+                        {' '}
+                        (порывы до{' '}
+                        <span className="font-semibold">
+                          {weather.windGustMs.toFixed(1)} м/с
+                        </span>
+                        )
+                      </>
+                    )}
+                  </p>
+                  {typeof weather.visibilityKm === 'number' && (
+                    <p>
+                      Видимость:{' '}
+                      <span className="font-semibold">
+                        {weather.visibilityKm.toFixed(1)} км
+                      </span>
+                    </p>
+                  )}
+                  <p className="capitalize">
+                    Осадки: {weather.description || 'нет данных'}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="mt-3 text-[11px] text-slate-500">
+            Обновлено: {formatUpdatedAt(weather?.updatedAt)}
           </div>
         </div>
       </div>
@@ -335,34 +495,35 @@ export default function AdminPage() {
             Последние операции и уведомления.
           </p>
 
-          {/* Список событий со скроллом под тёмную тему */}
-<div className="space-y-2 overflow-y-auto pr-2 max-h-96 scroll-dark">
-  {SYSTEM_EVENTS.map((ev) => (
-    <div
-      key={ev.id}
-      className="rounded-xl bg-slate-900/50 border border-slate-800/70 px-4 py-2.5 text-sm flex flex-col gap-1 shadow-sm shadow-slate-950/40"
-    >
-      <div className="flex items-center justify-between">
-        <span className="text-slate-400 text-[11px] font-mono">
-          {ev.time}
-        </span>
-        <span
-          className={
-            ev.level === 'info'
-              ? 'text-[11px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300'
-              : ev.level === 'warning'
-              ? 'text-[11px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300'
-              : 'text-[11px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300'
-          }
-        >
-          {ev.level.toUpperCase()}
-        </span>
-      </div>
-      <p className="text-slate-100 leading-snug">{ev.title}</p>
-      <p className="text-slate-500 text-[11px]">Источник: {ev.source}</p>
-    </div>
-  ))}
-</div>
+          <div className="space-y-2 overflow-y-auto pr-2 max-h-96 scroll-dark">
+            {SYSTEM_EVENTS.map((ev) => (
+              <div
+                key={ev.id}
+                className="rounded-xl bg-slate-900/50 border border-slate-800/70 px-4 py-2.5 text-sm flex flex-col gap-1 shadow-sm shadow-slate-950/40"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 text-[11px] font-mono">
+                    {ev.time}
+                  </span>
+                  <span
+                    className={
+                      ev.level === 'info'
+                        ? 'text-[11px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300'
+                        : ev.level === 'warning'
+                        ? 'text-[11px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300'
+                        : 'text-[11px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300'
+                    }
+                  >
+                    {ev.level.toUpperCase()}
+                  </span>
+                </div>
+                <p className="text-slate-100 leading-snug">{ev.title}</p>
+                <p className="text-slate-500 text-[11px]">
+                  Источник: {ev.source}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

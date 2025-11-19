@@ -12,9 +12,42 @@ import {
   fetchDronesByStation,
   type Drone,
 } from '../../shared/api/drones'
+import {
+  fetchWeather,
+  type WeatherInfo,
+  type WeatherRiskLevel,
+} from '../../shared/api/weather'
+
+// --- вспомогалки для отображения погодного риска ---
+
+function getRiskLabel(level: WeatherRiskLevel): string {
+  switch (level) {
+    case 'ok':
+      return 'Условия нормальные'
+    case 'warning':
+      return 'Условия осложнены'
+    case 'no_fly':
+      return 'Нелётная погода'
+    default:
+      return level
+  }
+}
+
+function getRiskBadgeClass(level: WeatherRiskLevel): string {
+  switch (level) {
+    case 'ok':
+      return 'bg-emerald-500/15 text-emerald-300'
+    case 'warning':
+      return 'bg-amber-500/15 text-amber-300'
+    case 'no_fly':
+      return 'bg-rose-500/20 text-rose-300'
+    default:
+      return 'bg-slate-500/20 text-slate-200'
+  }
+}
 
 export default function StationDetailsPage() {
-  // даём id значение по умолчанию '', чтобы тип был просто string
+  // сразу даём id значение по умолчанию
   const { id = '' } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
@@ -29,6 +62,12 @@ export default function StationDetailsPage() {
   const [commandLoading, setCommandLoading] = useState(false)
   const [commandStatus, setCommandStatus] = useState<string | null>(null)
 
+  // Погода для кластера станций
+  const [weather, setWeather] = useState<WeatherInfo | null>(null)
+  const [weatherLoading, setWeatherLoading] = useState(true)
+  const [weatherError, setWeatherError] = useState<string | null>(null)
+
+  // --- Загрузка станции и дронов ---
   useEffect(() => {
     if (!id) return
 
@@ -61,6 +100,38 @@ export default function StationDetailsPage() {
     loadStation()
     loadDrones()
   }, [id])
+
+  // --- Загрузка погоды (один раз при заходе на страницу) ---
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadWeather() {
+      try {
+        if (!cancelled) {
+          setWeatherLoading(true)
+          setWeatherError(null)
+        }
+        const data = await fetchWeather()
+        if (!cancelled) {
+          setWeather(data)
+        }
+      } catch {
+        if (!cancelled) {
+          setWeatherError('Не удалось загрузить данные погоды.')
+        }
+      } finally {
+        if (!cancelled) {
+          setWeatherLoading(false)
+        }
+      }
+    }
+
+    loadWeather()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   async function handleCommand(command: StationCommand) {
     if (!id) return
@@ -103,6 +174,9 @@ export default function StationDetailsPage() {
   }
 
   const battery = station.batteryAvg ?? station.batteryLevel ?? 0
+
+  const isNoFly = weather?.riskLevel === 'no_fly'
+  const isWarning = weather?.riskLevel === 'warning'
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
@@ -210,7 +284,6 @@ export default function StationDetailsPage() {
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-slate-400 text-xs">
-                      {/* вместо d.statusText выводим миссию дрона */}
                       {d.mission}
                     </div>
                     <button
@@ -226,14 +299,43 @@ export default function StationDetailsPage() {
           </div>
         </div>
 
-        {/* Правая колонка: команды станции */}
+        {/* Правая колонка: команды станции + погода */}
         <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6 h-fit">
           <h2 className="text-lg font-semibold mb-4">Команды станции</h2>
 
+          {/* Блок погоды */}
+          <div className="mb-4">
+            <p className="text-slate-400 text-sm mb-1">Погодные условия</p>
+            {weatherLoading && (
+              <p className="text-xs text-slate-300">
+                Загрузка данных о погоде...
+              </p>
+            )}
+            {!weatherLoading && weatherError && (
+              <p className="text-xs text-amber-300">
+                {weatherError} Команды доступны, решение принимает оператор.
+              </p>
+            )}
+            {!weatherLoading && !weatherError && weather && (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-200">
+                <span className="font-semibold">{weather.tempC}°C</span>
+                <span
+                  className={
+                    'px-2 py-0.5 rounded-full ' +
+                    getRiskBadgeClass(weather.riskLevel)
+                  }
+                >
+                  {getRiskLabel(weather.riskLevel)}
+                </span>
+              </div>
+            )}
+          </div>
+
           <div className="space-y-3">
             <button
-              className="w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-medium transition disabled:opacity-60"
-              disabled={commandLoading}
+              className="w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-medium transition disabled:opacity-60 disabled:cursor-not-allowed"
+              // 🔴 БЛОКИРУЕМ пока погода грузится + при no_fly
+              disabled={commandLoading || weatherLoading || isNoFly}
               onClick={() => handleCommand('send')}
             >
               Отправить дрон на задание
@@ -255,6 +357,28 @@ export default function StationDetailsPage() {
               Перезапустить станцию
             </button>
           </div>
+
+          {/* Подсказки по безопасности */}
+          {weatherLoading && (
+            <p className="mt-4 text-xs text-slate-400">
+              Ожидаем данные погоды от метеосервиса. Запуск на задание временно
+              заблокирован.
+            </p>
+          )}
+
+          {!weatherLoading && isNoFly && (
+            <p className="mt-4 text-xs text-rose-300">
+              Нелётная погода. Запуск дронов на задание временно заблокирован
+              по регламенту безопасности.
+            </p>
+          )}
+
+          {!weatherLoading && !isNoFly && isWarning && (
+            <p className="mt-4 text-xs text-amber-300">
+              Погодные условия осложнены. Запуск разрешён, но требует
+              повышенной осторожности.
+            </p>
+          )}
 
           {commandStatus && (
             <p className="mt-4 text-xs text-emerald-300">

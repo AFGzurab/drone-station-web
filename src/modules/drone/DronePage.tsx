@@ -18,9 +18,10 @@ import {
 } from "../../shared/api/flights";
 
 import {
-  subscribeToTelemetry,
-  type DroneTelemetry,
-} from "../../shared/api/telemetry";
+  fetchWeather,
+  type WeatherInfo,
+  type WeatherRiskLevel,
+} from "../../shared/api/weather";
 
 function getFlightStatusLabel(status: FlightStatus): string {
   switch (status) {
@@ -51,6 +52,34 @@ function getFlightStatusBadgeClasses(status: FlightStatus): string {
   }
 }
 
+// --- риск по погоде для карточки команд ---
+
+function getRiskLabel(level: WeatherRiskLevel): string {
+  switch (level) {
+    case "ok":
+      return "Условия нормальные";
+    case "warning":
+      return "Условия осложнены";
+    case "no_fly":
+      return "Нелётная погода";
+    default:
+      return level;
+  }
+}
+
+function getRiskBadgeClass(level: WeatherRiskLevel): string {
+  switch (level) {
+    case "ok":
+      return "bg-emerald-500/15 text-emerald-300";
+    case "warning":
+      return "bg-amber-500/15 text-amber-300";
+    case "no_fly":
+      return "bg-rose-500/20 text-rose-300";
+    default:
+      return "bg-slate-500/20 text-slate-200";
+  }
+}
+
 export function DronePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -67,8 +96,10 @@ export function DronePage() {
   const [flightsLoading, setFlightsLoading] = useState(false);
   const [flightsError, setFlightsError] = useState<string | null>(null);
 
-  // Онлайн-телеметрия (скорость, высота, сигнал, координаты)
-  const [telemetry, setTelemetry] = useState<DroneTelemetry | null>(null);
+  // Погода для ограничения команд
+  const [weather, setWeather] = useState<WeatherInfo | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(true);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
 
   // ------------------------------------------
   // Загрузка данных дрона
@@ -131,7 +162,7 @@ export function DronePage() {
   }, [id]);
 
   // ------------------------------------------
-  // Подписка на «состояние дрона» (эмуляция WebSocket)
+  // Подписка на телеметрию дрона (эмуляция WebSocket)
   // ------------------------------------------
   useEffect(() => {
     if (!id) return;
@@ -146,22 +177,41 @@ export function DronePage() {
   }, [id]);
 
   // ------------------------------------------
-  // Подписка на общую телеметрию и вытаскиваем данные по этому дрону
+  // Погода для ограничения команд
   // ------------------------------------------
   useEffect(() => {
-    if (!id) return;
+    let cancelled = false;
 
-    const unsubscribe = subscribeToTelemetry((snapshot) => {
-      const t = snapshot.find((item) => item.droneId === id);
-      if (t) {
-        setTelemetry(t);
+    async function loadWeather() {
+      try {
+        if (!cancelled) {
+          setWeatherLoading(true);
+          setWeatherError(null);
+        }
+        const data = await fetchWeather();
+        if (!cancelled) {
+          setWeather(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setWeatherError("Не удалось загрузить данные погоды.");
+        }
+      } finally {
+        if (!cancelled) {
+          setWeatherLoading(false);
+        }
       }
-    });
+    }
+
+    loadWeather();
 
     return () => {
-      unsubscribe();
+      cancelled = true;
     };
-  }, [id]);
+  }, []);
+
+  const isNoFly = weather?.riskLevel === "no_fly";
+  const isWarning = weather?.riskLevel === "warning";
 
   // ------------------------------------------
   // Статус-бейдж дрона
@@ -228,7 +278,6 @@ export function DronePage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* === ЛЕВАЯ КОЛОНКА: дрон + история полётов === */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Карточка с основными данными дрона */}
             <div className="card">
               <h1>{drone.name}</h1>
               <p className="text-slate-400 mb-4">
@@ -240,8 +289,6 @@ export function DronePage() {
                   <h3>Текущая миссия</h3>
                   <p className="mt-1">{drone.mission}</p>
                 </div>
-
-                {/* Статус-бейдж */}
                 <div>{renderDroneStatusBadge()}</div>
               </div>
 
@@ -274,60 +321,9 @@ export function DronePage() {
                   </span>
                 </div>
               </div>
-
-              {/* Онлайн-телеметрия */}
-              {telemetry && (
-                <div className="mt-5 border-t border-slate-800 pt-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h3 className="text-sm font-semibold">
-                        Онлайн-телеметрия
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Обновлено:{" "}
-                        {new Date(
-                          telemetry.lastUpdate
-                        ).toLocaleTimeString("ru-RU", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        })}
-                      </p>
-                    </div>
-                    <div className="text-right text-xs text-slate-400">
-                      <div>
-                        {telemetry.lat.toFixed(4)},{" "}
-                        {telemetry.lng.toFixed(4)}
-                      </div>
-                      <div className="text-slate-500">Координаты</div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                    <div>
-                      <p className="text-slate-400 text-xs">Скорость</p>
-                      <p className="text-slate-100 font-medium">
-                        {Math.round(telemetry.speed)} км/ч
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-400 text-xs">Высота</p>
-                      <p className="text-slate-100 font-medium">
-                        {Math.round(telemetry.altitude)} м
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-400 text-xs">Сигнал</p>
-                      <p className="text-slate-100 font-medium">
-                        {Math.round(telemetry.signal)}%
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
 
-            {/* Карточка "Недавние полёты этого дрона" */}
+            {/* История полётов */}
             <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-5">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">Недавние полёты дрона</h2>
@@ -407,15 +403,44 @@ export function DronePage() {
             </div>
           </div>
 
-          {/* Правая колонка: команды дрону — как у команд станции */}
+          {/* Правая колонка: команды дрону — с учётом погоды */}
           <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6 h-fit self-start">
             <h2 className="text-lg font-semibold mb-4">Команды дрону</h2>
+
+            {/* Погодные условия */}
+            <div className="mb-4">
+              <p className="text-slate-400 text-sm mb-1">Погодные условия</p>
+              {weatherLoading && (
+                <p className="text-xs text-slate-300">
+                  Загрузка данных о погоде...
+                </p>
+              )}
+              {!weatherLoading && weatherError && (
+                <p className="text-xs text-amber-300">
+                  {weatherError} Команды доступны, решение принимает оператор.
+                </p>
+              )}
+              {!weatherLoading && !weatherError && weather && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-200">
+                  <span className="font-semibold">{weather.tempC}°C</span>
+                  <span
+                    className={
+                      "px-2 py-0.5 rounded-full " +
+                      getRiskBadgeClass(weather.riskLevel)
+                    }
+                  >
+                    {getRiskLabel(weather.riskLevel)}
+                  </span>
+                </div>
+              )}
+            </div>
 
             <div className="space-y-3">
               <button
                 onClick={() => handleCommand("send_on_mission")}
                 className="w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-medium transition disabled:opacity-60 disabled:cursor-not-allowed"
-                disabled={commandLoading}
+                // 🔴 блокируем при загрузке погоды и no_fly
+                disabled={commandLoading || weatherLoading || isNoFly}
               >
                 Отправить на задание
               </button>
@@ -437,7 +462,28 @@ export function DronePage() {
               </button>
             </div>
 
-            {/* Статус выполнения команды */}
+            {/* Статус по погоде */}
+            {weatherLoading && (
+              <p className="mt-4 text-xs text-slate-400">
+                Ожидаем данные погоды от метеосервиса. Запуск на задание временно
+                заблокирован.
+              </p>
+            )}
+
+            {!weatherLoading && isNoFly && (
+              <p className="mt-4 text-xs text-rose-300">
+                Нелётная погода. Запуск дрона на задание временно заблокирован
+                по регламенту безопасности.
+              </p>
+            )}
+
+            {!weatherLoading && !isNoFly && isWarning && (
+              <p className="mt-4 text-xs text-amber-300">
+                Погодные условия осложнены. Запуск разрешён, но требует
+                повышенной осторожности.
+              </p>
+            )}
+
             {commandLoading && (
               <p className="mt-4 text-xs text-slate-300">
                 Выполнение команды...
