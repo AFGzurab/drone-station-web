@@ -76,6 +76,7 @@ npm install
 ```bash
 npm run dev
 ```
+ИЛИ запустить файл 'run-dev.bat'
 
 Открыть в браузере: http://localhost:5173
 
