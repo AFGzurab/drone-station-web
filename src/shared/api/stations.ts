@@ -2,6 +2,7 @@
 
 import { logSystemEvent } from './events'
 import { getSavedUser } from '../auth/auth'
+import { DRONES } from './drones'
 
 // ------------------------------------
 // Типы
@@ -44,7 +45,9 @@ function getCurrentUserContext() {
 }
 
 // ------------------------------------
-// Мок-станции
+// Мок-станции (базовые данные)
+// dronesActive / dronesTotal будут
+// пересчитаны динамически при запросе
 // ------------------------------------
 
 export const STATIONS: Station[] = [
@@ -69,7 +72,7 @@ export const STATIONS: Station[] = [
   {
     id: 'st-3',
     name: 'Станция №3 — Южная',
-    coords: { lat: 55.00, lng: 82.90 },
+    coords: { lat: 55.0, lng: 82.9 },
     status: 'error',
     dronesActive: 0,
     dronesTotal: 1,
@@ -78,18 +81,50 @@ export const STATIONS: Station[] = [
 ]
 
 // ------------------------------------
+// Пересчёт дронов по станции
+// ------------------------------------
+
+function recomputeDronesForStation(stationId: string) {
+  const stationDrones = DRONES.filter((d) => d.stationId === stationId)
+
+  const dronesTotal = stationDrones.length
+  const dronesActive = stationDrones.filter((d) =>
+    d.status === 'on_mission' || d.status === 'returning'
+  ).length
+
+  return { dronesActive, dronesTotal }
+}
+
+// ------------------------------------
 // REST functions
 // ------------------------------------
 
 export async function fetchStations(): Promise<Station[]> {
   await delay(200)
-  return STATIONS
+
+  // каждый раз возвращаем актуальные значения по дронам
+  return STATIONS.map((st) => {
+    const { dronesActive, dronesTotal } = recomputeDronesForStation(st.id)
+    return {
+      ...st,
+      dronesActive,
+      dronesTotal,
+    }
+  })
 }
 
 export async function fetchStationById(id: string): Promise<Station | null> {
   await delay(200)
-  const st = STATIONS.find((s) => s.id === id)
-  return st ?? null
+  const base = STATIONS.find((s) => s.id === id)
+  if (!base) return null
+
+  const { dronesActive, dronesTotal } = recomputeDronesForStation(base.id)
+
+  return {
+    ...base,
+    dronesActive,
+    dronesTotal,
+  }
 }
 
 // ------------------------------------
@@ -133,7 +168,6 @@ export async function sendStationCommand(
       station.status = 'online'
       station.batteryAvg = Math.min(100, (station.batteryAvg ?? 0) + 5)
 
-
       return {
         success: true,
         message: `Станция ${station.name} успешно перезапущена (симуляция).`,
@@ -161,10 +195,7 @@ export async function sendStationCommand(
 // Смена статуса станции = событие
 // ------------------------------------
 
-export function updateStationStatus(
-  id: string,
-  newStatus: StationStatus,
-) {
+export function updateStationStatus(id: string, newStatus: StationStatus) {
   const st = STATIONS.find((s) => s.id === id)
 
   if (!st) return
