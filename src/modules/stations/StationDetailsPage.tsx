@@ -6,6 +6,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   fetchStationById,
   sendStationCommand,
+  updateStationStatus,
   type Station,
 } from '../../shared/api/stations'
 
@@ -353,6 +354,40 @@ export default function StationDetailsPage() {
     }
   }
 
+  // Включить / отключить станцию
+  async function handleToggleStationPower() {
+    if (!station) return
+
+    setCommandLoading(true)
+    setCommandStatus(null)
+
+    try {
+      const newStatus = station.status === 'online' ? 'offline' : 'online'
+
+      // имитируем задержку команды
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
+      // обновляем статус в "бэке" + логируем событие
+      updateStationStatus(station.id, newStatus)
+
+      // перезагружаем станцию, чтобы в UI всё обновилось
+      const fresh = await fetchStationById(station.id)
+      if (fresh) {
+        setStation(fresh)
+      }
+
+      setCommandStatus(
+        newStatus === 'online'
+          ? `Станция ${station.name} включена (симуляция).`
+          : `Станция ${station.name} переведена в Offline (симуляция).`,
+      )
+    } catch {
+      setCommandStatus('Не удалось изменить статус станции.')
+    } finally {
+      setCommandLoading(false)
+    }
+  }
+
   // ----------------- JSX -----------------
 
   if (stationLoading) {
@@ -370,6 +405,8 @@ export default function StationDetailsPage() {
       </div>
     )
   }
+
+  const isStationOnline = station.status === 'online'
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
@@ -567,6 +604,22 @@ export default function StationDetailsPage() {
                 }
               >
                 Вернуть дронов на станцию
+              </button>
+
+              <button
+                type="button"
+                onClick={handleToggleStationPower}
+                disabled={commandLoading}
+                className={
+                  'w-full px-4 py-2 rounded-xl text-sm font-medium transition ' +
+                  (commandLoading
+                    ? 'bg-emerald-600/40 text-slate-300 cursor-not-allowed'
+                    : isStationOnline
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white')
+                }
+              >
+                {isStationOnline ? 'Отключить станцию' : 'Включить станцию'}
               </button>
 
               <button

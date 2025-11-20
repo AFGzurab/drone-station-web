@@ -9,15 +9,24 @@ type Props = {
 }
 
 export function ProtectedRoute({ children, requireRole }: Props) {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
   const location = useLocation()
 
-  // не залогинен → на /login
+  // Пока контекст авторизации ещё грузится
+  if (loading) {
+    return (
+      <div className="text-slate-300 text-center mt-10">
+        Загрузка…
+      </div>
+    )
+  }
+
+  // Пользователь не авторизован
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  // есть требуемая роль и она не совпадает
+  // Нет нужной роли
   if (requireRole && user.role !== requireRole) {
     return <Navigate to="/stations" replace />
   }

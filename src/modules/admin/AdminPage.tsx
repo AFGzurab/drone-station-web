@@ -18,6 +18,7 @@ import {
   type SystemEventLevel,
   type SystemEventSource,
 } from '../../shared/api/events'
+import { startDemoScenario } from '../../shared/api/demoScenario'
 
 // ----- helpers для погоды -----
 
@@ -75,6 +76,9 @@ export default function AdminPage() {
   const [simulationMode, setSimulationMode] = useState<WeatherRiskLevel | null>(
     null,
   )
+
+  // DEMO-сценарий
+  const [demoRunning, setDemoRunning] = useState(false)
 
   // Системные события
   const [events, setEvents] = useState<SystemEvent[]>([])
@@ -211,6 +215,18 @@ export default function AdminPage() {
     }
   }
 
+  // --- Запуск DEMO-сценария ---
+  function handleStartDemoScenario() {
+    if (demoRunning) return
+    startDemoScenario()
+    setDemoRunning(true)
+
+    // через ~30 секунд автоматически считаем, что сценарий завершён
+    window.setTimeout(() => {
+      setDemoRunning(false)
+    }, 32_000)
+  }
+
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto px-6 py-8">
@@ -318,7 +334,7 @@ export default function AdminPage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)]">
         {/* Левая часть: погода + таблица станций */}
         <div className="space-y-6">
-          {/* Погода + тумблер симуляции */}
+          {/* Погода + тумблер симуляции + DEMO */}
           <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -328,8 +344,8 @@ export default function AdminPage() {
                 </p>
               </div>
 
-              {/* Тумблер симуляции */}
-              <div className="flex flex-col items-start sm:items-end gap-1">
+              {/* Тумблер симуляции + DEMO-кнопка */}
+              <div className="flex flex-col items-start sm:items-end gap-2">
                 <button
                   type="button"
                   onClick={handleToggleNoFlySimulation}
@@ -344,6 +360,23 @@ export default function AdminPage() {
                     ? 'Выключить симуляцию нелётной погоды'
                     : 'Сымитировать нелётную погоду'}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handleStartDemoScenario}
+                  disabled={demoRunning}
+                  className={
+                    'px-3 py-1.5 rounded-full text-xs font-medium transition ' +
+                    (demoRunning
+                      ? 'bg-sky-600/40 text-slate-300 cursor-not-allowed'
+                      : 'bg-sky-600 hover:bg-sky-700 text-white')
+                  }
+                >
+                  {demoRunning
+                    ? 'DEMO-сценарий выполняется…'
+                    : 'Запустить DEMO-сценарий'}
+                </button>
+
                 <p className="text-[11px] text-slate-500 max-w-xs text-right">
                   {simulationMode === 'no_fly'
                     ? 'Сейчас используется принудительный режим: «нелётная погода». Все станции и дроны видят риск no_fly.'
