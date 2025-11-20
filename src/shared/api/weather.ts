@@ -1,7 +1,7 @@
 // src/shared/api/weather.ts
 //
 // Реальные погодные данные через Open-Meteo (без API-ключей)
-// и совместимый интерфейс под AdminPage (fetchWeather, WeatherInfo, WeatherRiskLevel).
+// и совместимый интерфейс под AdminPage / StationDetails / DronePage.
 
 import { logSystemEvent } from './events'
 
@@ -21,6 +21,46 @@ export type WeatherInfo = {
 const DEFAULT_CLUSTER_COORDS = {
   lat: 55.03,
   lng: 82.92,
+}
+
+// -------------------------------------------------
+// Флаг симуляции «нелётной погоды»
+// -------------------------------------------------
+
+let forcedRiskLevel: WeatherRiskLevel | null = null
+
+/**
+ * Включает / выключает режим симуляции погоды.
+ * mode = 'no_fly' | 'warning' | 'ok' | null
+ * null = использовать реальную оценку.
+ */
+export function setWeatherSimulationMode(mode: WeatherRiskLevel | null) {
+  forcedRiskLevel = mode
+
+  if (mode === 'no_fly') {
+    logSystemEvent({
+      level: 'warning',
+      source: 'admin',
+      title: 'Администратор включил симуляцию нелётной погоды.',
+    })
+  } else if (mode === null) {
+    logSystemEvent({
+      level: 'info',
+      source: 'admin',
+      title: 'Администратор отключил симуляцию погоды (используем реальные данные).',
+    })
+  } else {
+    logSystemEvent({
+      level: 'info',
+      source: 'admin',
+      title: `Администратор задал симулируемый уровень погодного риска: ${mode}.`,
+    })
+  }
+}
+
+/** Текущий режим симуляции (для отладки / отображения в UI) */
+export function getWeatherSimulationMode(): WeatherRiskLevel | null {
+  return forcedRiskLevel
 }
 
 // -------------------------------------------------
@@ -127,7 +167,7 @@ function maybeLogWeatherEvent(
 }
 
 // -------------------------------------------------
-// Основная функция, которую ждёт AdminPage
+// Основная функция, которую ждут страницы
 // -------------------------------------------------
 
 export async function fetchWeather(
@@ -196,10 +236,14 @@ export async function fetchWeather(
     precipitationMm,
   })
 
+  // применяем симуляцию, если включена
+  const finalRiskLevel: WeatherRiskLevel =
+    forcedRiskLevel !== null ? forcedRiskLevel : riskLevel
+
   const updatedAt = new Date(current.time).getTime()
 
-  // --- НОВОЕ: создаём системное событие при изменении лётности погоды ---
-  maybeLogWeatherEvent(riskLevel, description)
+  // логируем событие по ИТОГОВОМУ уровню риска
+  maybeLogWeatherEvent(finalRiskLevel, description)
 
   return {
     tempC,
@@ -207,7 +251,7 @@ export async function fetchWeather(
     windGustMs,
     visibilityKm,
     description,
-    riskLevel,
+    riskLevel: finalRiskLevel,
     updatedAt,
   }
 }

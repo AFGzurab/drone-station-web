@@ -8,6 +8,8 @@ import {
   fetchWeather,
   type WeatherInfo,
   type WeatherRiskLevel,
+  getWeatherSimulationMode,
+  setWeatherSimulationMode,
 } from '../../shared/api/weather'
 import {
   getRecentEvents,
@@ -69,10 +71,15 @@ export default function AdminPage() {
   const [weatherLoading, setWeatherLoading] = useState(true)
   const [weatherError, setWeatherError] = useState<string | null>(null)
 
-  // Системные события (живые)
+  // Текущий режим симуляции погоды
+  const [simulationMode, setSimulationMode] = useState<WeatherRiskLevel | null>(
+    null,
+  )
+
+  // Системные события
   const [events, setEvents] = useState<SystemEvent[]>([])
 
-  // Фильтры
+  // Фильтры событий
   const [levelFilter, setLevelFilter] = useState<LevelFilter>('all')
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
 
@@ -100,6 +107,9 @@ export default function AdminPage() {
   // --- Загрузка и автообновление погоды ---
   useEffect(() => {
     let cancelled = false
+
+    // восстановим режим симуляции при монтировании
+    setSimulationMode(getWeatherSimulationMode())
 
     async function loadWeather() {
       try {
@@ -178,10 +188,33 @@ export default function AdminPage() {
     })
   }, [events, levelFilter, sourceFilter])
 
+  // --- Переключатель симуляции нелётной погоды ---
+  async function handleToggleNoFlySimulation() {
+    try {
+      if (simulationMode === 'no_fly') {
+        setWeatherSimulationMode(null)
+        setSimulationMode(null)
+      } else {
+        setWeatherSimulationMode('no_fly')
+        setSimulationMode('no_fly')
+      }
+
+      // сразу обновим блок погоды
+      setWeatherLoading(true)
+      setWeatherError(null)
+      const data = await fetchWeather()
+      setWeather(data)
+    } catch {
+      setWeatherError('Не удалось обновить данные погоды после переключения.')
+    } finally {
+      setWeatherLoading(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto px-6 py-8">
-        <p className="text-slate-300">Загрузка панели администратора...</p>
+        <p className="text-slate-300">Загрузка панели администратора.</p>
       </div>
     )
   }
@@ -232,29 +265,32 @@ export default function AdminPage() {
                 />
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                {onlinePercent}% станций в сети
+                {onlinePercent}% инфраструктуры онлайн.
               </p>
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2 text-xs">
-            <span className="px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-300">
+          <div className="mt-4 text-xs text-slate-400 space-y-1">
+            <p>
+              <span className="inline-block w-3 h-1 mr-1 bg-emerald-400 rounded-full" />
               Online: {onlineCount}
-            </span>
-            <span className="px-2 py-1 rounded-full bg-slate-500/15 text-slate-200">
+            </p>
+            <p>
+              <span className="inline-block w-3 h-1 mr-1 bg-slate-400 rounded-full" />
               Offline: {offlineCount}
-            </span>
-            <span className="px-2 py-1 rounded-full bg-rose-500/15 text-rose-300">
+            </p>
+            <p>
+              <span className="inline-block w-3 h-1 mr-1 bg-rose-400 rounded-full" />
               Ошибка: {errorCount}
-            </span>
+            </p>
           </div>
         </div>
 
         {/* Средний заряд */}
         <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-5">
-          <p className="text-slate-400 text-sm">Средний заряд станций</p>
-          <div className="mt-2 flex items-center gap-3">
-            <div className="flex-1 h-2 rounded-full bg-slate-700 overflow-hidden">
+          <p className="text-slate-400 text-sm">Средний заряд по станциям</p>
+          <div className="mt-3 flex items-center gap-3">
+            <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
               <div
                 className="h-full bg-sky-500"
                 style={{ width: `${stats.avgBattery}%` }}
@@ -266,170 +302,217 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Погодные условия */}
-        <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-5 flex flex-col justify-between">
-          <div>
-            <p className="text-slate-400 text-sm">
-              Погодные условия — кластер станций
-            </p>
-
-            {weatherLoading && (
-              <p className="mt-3 text-sm text-slate-300">
-                Загрузка данных о погоде.
-              </p>
-            )}
-
-            {!weatherLoading && weatherError && (
-              <p className="mt-3 text-sm text-rose-300">{weatherError}</p>
-            )}
-
-            {!weatherLoading && !weatherError && weather && (
-              <>
-                <div className="mt-3 flex items-center gap-2">
-                  <span className="text-3xl font-semibold">
-                    {weather.tempC}°C
-                  </span>
-                  <span
-                    className={
-                      'text-xs px-3 py-1 rounded-full ' +
-                      getRiskBadgeClass(weather.riskLevel)
-                    }
-                  >
-                    {getRiskLabel(weather.riskLevel)}
-                  </span>
-                </div>
-
-                <div className="mt-3 space-y-1 text-xs text-slate-300">
-                  <p>
-                    Ветер:{' '}
-                    <span className="font-semibold">
-                      {weather.windSpeedMs.toFixed(1)} м/с
-                    </span>
-                    {weather.windGustMs && (
-                      <>
-                        {' '}
-                        (порывы до{' '}
-                        <span className="font-semibold">
-                          {weather.windGustMs.toFixed(1)} м/с
-                        </span>
-                        )
-                      </>
-                    )}
-                  </p>
-                  {typeof weather.visibilityKm === 'number' && (
-                    <p>
-                      Видимость:{' '}
-                      <span className="font-semibold">
-                        {weather.visibilityKm.toFixed(1)} км
-                      </span>
-                    </p>
-                  )}
-                  <p className="capitalize">
-                    Осадки: {weather.description || 'нет данных'}
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
-
-          {weather && (
-            <p className="mt-3 text-[11px] text-slate-500">
-              Обновлено: {formatUpdatedAt(weather.updatedAt)}
-            </p>
-          )}
+        {/* Проблемные станции */}
+        <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-5">
+          <p className="text-slate-400 text-sm">Проблемные станции</p>
+          <p className="mt-2 text-3xl font-semibold text-amber-300">
+            {stats.problem}
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            Количество станций в статусе Offline или Ошибка.
+          </p>
         </div>
       </div>
 
+      {/* Блок: Погода + таблица станций + события */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)]">
-        {/* Таблица станций */}
-        <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6 min-h-[360px] flex flex-col">
-          <h2 className="text-lg font-semibold mb-1">Станции</h2>
-          <p className="text-slate-400 text-sm mb-4">
-            Сводка по всем дрон-станциям.
-          </p>
+        {/* Левая часть: погода + таблица станций */}
+        <div className="space-y-6">
+          {/* Погода + тумблер симуляции */}
+          <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Погодные условия</h2>
+                <p className="text-slate-400 text-sm">
+                  Кластер станций (реальные данные Open-Meteo).
+                </p>
+              </div>
 
-          <div className="overflow-x-auto">
-            <table className="table-auto w-full text-left">
-              <thead className="text-slate-300 text-sm border-b border-slate-700">
-                <tr>
-                  <th className="py-3 pl-2">Станция</th>
-                  <th className="py-3 text-center">Статус</th>
-                  <th className="py-3 text-center">Дроны</th>
-                  <th className="py-3 text-center">Заряд</th>
-                  <th className="py-3 pr-3 text-right">Действия</th>
-                </tr>
-              </thead>
-              <tbody className="text-slate-200">
-                {stations.map((s) => (
-                  <tr
-                    key={s.id}
-                    className="border-b border-slate-700/40 hover:bg-slate-700/25 transition"
-                  >
-                    <td className="py-4 pl-2">
-                      <div className="font-medium">{s.name}</div>
-                      <div className="text-slate-400 text-xs mt-0.5">
-                        {s.coords.lat}, {s.coords.lng}
-                      </div>
-                    </td>
-                    <td className="py-4 text-center">
-                      {s.status === 'online' && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full bg-emerald-600/20 text-emerald-300 text-xs">
-                          ● Online
-                        </span>
+              {/* Тумблер симуляции */}
+              <div className="flex flex-col items-start sm:items-end gap-1">
+                <button
+                  type="button"
+                  onClick={handleToggleNoFlySimulation}
+                  className={
+                    'px-3 py-1.5 rounded-full text-xs font-medium border transition ' +
+                    (simulationMode === 'no_fly'
+                      ? 'bg-rose-600/20 text-rose-200 border-rose-400'
+                      : 'bg-slate-900/80 text-slate-200 border-slate-600 hover:border-sky-400')
+                  }
+                >
+                  {simulationMode === 'no_fly'
+                    ? 'Выключить симуляцию нелётной погоды'
+                    : 'Сымитировать нелётную погоду'}
+                </button>
+                <p className="text-[11px] text-slate-500 max-w-xs text-right">
+                  {simulationMode === 'no_fly'
+                    ? 'Сейчас используется принудительный режим: «нелётная погода». Все станции и дроны видят риск no_fly.'
+                    : 'Сейчас используется реальная оценка погодного риска по данным Open-Meteo.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 bg-slate-900/60 border border-slate-700/70 rounded-2xl px-4 py-3">
+              {weatherLoading && (
+                <p className="text-sm text-slate-300">
+                  Загрузка данных о погоде…
+                </p>
+              )}
+
+              {!weatherLoading && weatherError && (
+                <p className="text-sm text-rose-300">{weatherError}</p>
+              )}
+
+              {!weatherLoading && !weatherError && weather && (
+                <>
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl font-semibold">
+                      {weather.tempC}°C
+                    </span>
+                    <span
+                      className={
+                        'text-xs px-3 py-1 rounded-full ' +
+                        getRiskBadgeClass(weather.riskLevel)
+                      }
+                    >
+                      {getRiskLabel(weather.riskLevel)}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 space-y-1 text-xs text-slate-300">
+                    <p>
+                      Ветер:{' '}
+                      <span className="font-semibold">
+                        {weather.windSpeedMs.toFixed(1)} м/с
+                      </span>
+                      {weather.windGustMs && (
+                        <>
+                          {' '}
+                          (порывы до{' '}
+                          <span className="font-semibold">
+                            {weather.windGustMs.toFixed(1)} м/с
+                          </span>
+                          )
+                        </>
                       )}
-                      {s.status === 'offline' && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full bg-slate-500/20 text-slate-300 text-xs">
-                          ● Offline
+                    </p>
+                    {typeof weather.visibilityKm === 'number' && (
+                      <p>
+                        Видимость:{' '}
+                        <span className="font-semibold">
+                          {weather.visibilityKm.toFixed(1)} км
                         </span>
-                      )}
-                      {s.status === 'error' && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full bg-rose-600/20 text-rose-300 text-xs">
-                          ● Ошибка
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-4 text-center">
-                      {s.dronesActive} / {s.dronesTotal}
-                    </td>
-                    <td className="py-4">
-                      <div className="flex items-center justify-center gap-2">
-                        <div className="h-2 w-32 bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-sky-500"
-                            style={{
-                              width: `${s.batteryAvg ?? s.batteryLevel ?? 0}%`,
-                            }}
-                          />
-                        </div>
-                        <span className="text-slate-300 text-sm">
-                          {s.batteryAvg ?? s.batteryLevel ?? 0}%
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 pr-3 text-right">
-                      <button
-                        onClick={() => navigate(`/stations/${s.id}`)}
-                        className="px-4 py-1.5 bg-sky-600 hover:bg-sky-700 text-sm rounded-xl text-white transition"
-                      >
-                        Открыть
-                      </button>
-                    </td>
+                      </p>
+                    )}
+                    <p className="capitalize">
+                      Осадки: {weather.description || 'нет данных'}
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {weather && (
+              <p className="mt-3 text-[11px] text-slate-500">
+                Обновлено: {formatUpdatedAt(weather.updatedAt)}
+              </p>
+            )}
+          </div>
+
+          {/* Таблица станций */}
+          <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6 flex flex-col">
+            <h2 className="text-lg font-semibold mb-1">Станции</h2>
+            <p className="text-slate-400 text-sm mb-4">
+              Сводка по всем дрон-станциям.
+            </p>
+
+            <div className="overflow-x-auto">
+              <table className="table-auto w-full text-left">
+                <thead className="text-slate-300 text-sm border-b border-slate-700">
+                  <tr>
+                    <th className="py-3 pl-2">Станция</th>
+                    <th className="py-3 text-center">Статус</th>
+                    <th className="py-3 text-center">Дроны</th>
+                    <th className="py-3 text-center">Заряд</th>
+                    <th className="py-3 pr-3 text-right">Действия</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="text-slate-200">
+                  {stations.map((s) => (
+                    <tr
+                      key={s.id}
+                      className="border-b border-slate-700/40 hover:bg-slate-700/25 transition"
+                    >
+                      <td className="py-4 pl-2">
+                        <div className="font-medium">{s.name}</div>
+                        <div className="text-slate-400 text-xs mt-0.5">
+                          {s.coords.lat}, {s.coords.lng}
+                        </div>
+                      </td>
+                      <td className="py-4 text-center">
+                        <span
+                          className={
+                            'status-badge ' +
+                            (s.status === 'online'
+                              ? 'status-online'
+                              : s.status === 'offline'
+                              ? 'status-offline'
+                              : 'status-error')
+                          }
+                        >
+                          ●{' '}
+                          {s.status === 'online'
+                            ? 'Online'
+                            : s.status === 'offline'
+                            ? 'Offline'
+                            : 'Ошибка'}
+                        </span>
+                      </td>
+                      <td className="py-4 text-center">
+                        {s.dronesActive} / {s.dronesTotal}
+                      </td>
+                      <td className="py-4">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="flex-1 h-2 max-w-[160px] bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-sky-500"
+                              style={{ width: `${s.batteryAvg ?? 0}%` }}
+                            />
+                          </div>
+                          <span className="text-slate-300 min-w-[32px] text-right">
+                            {s.batteryAvg ?? 0}%
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-4 pr-3 text-right">
+                        <button
+                          onClick={() => navigate(`/stations/${s.id}`)}
+                          className="px-4 py-1.5 bg-sky-600 hover:bg-sky-700 rounded-xl text-white text-sm transition"
+                        >
+                          Открыть
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
-        {/* Системные события */}
-        <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6 flex flex-col min-h-[360px]">
-          <h2 className="text-lg font-semibold mb-1">Системные события</h2>
-          <p className="text-slate-400 text-sm mb-4">
-            Последние операции и уведомления.
-          </p>
+        {/* Правая часть: системные события */}
+        <div className="bg-slate-800/70 border border-slate-700/70 rounded-2xl p-6 flex flex-col gap-4 h-[480px]">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold">Системные события</h2>
+              <p className="text-slate-400 text-sm">
+                Журнал последних операций и уведомлений.
+              </p>
+            </div>
+          </div>
 
           {/* Панель фильтров */}
-          <div className="mb-4 flex flex-wrap gap-3 items-center justify-between text-xs">
+          <div className="flex flex-wrap gap-3 items-center text-xs">
             <div className="flex gap-1 items-center flex-wrap">
               <span className="text-slate-400 mr-1">Уровень:</span>
               {(
@@ -475,7 +558,8 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="space-y-2 overflow-y-auto pr-2 max-h-96 scroll-dark">
+          {/* Список событий — занимает всё оставшееся место и скроллится */}
+          <div className="mt-1 flex-1 min-h-0 space-y-2 overflow-y-auto pr-2 scroll-dark">
             {filteredEvents.length === 0 && (
               <p className="text-slate-500 text-sm">
                 Нет событий, подходящих под выбранные фильтры.
@@ -485,28 +569,33 @@ export default function AdminPage() {
             {filteredEvents.map((ev) => (
               <div
                 key={ev.id}
-                className="rounded-xl bg-slate-900/50 border border-slate-800/70 px-4 py-2.5 text-sm flex flex-col gap-1 shadow-sm shadow-slate-950/40"
+                className="relative rounded-xl bg-slate-900/60 border border-slate-800/80 px-4 py-2.5 text-sm flex flex-col gap-1 shadow-sm shadow-slate-950/40"
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 text-[11px] font-mono">
-                    {ev.time}
-                  </span>
-                  <span
-                    className={
-                      ev.level === 'info'
-                        ? 'text-[11px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300'
-                        : ev.level === 'warning'
-                        ? 'text-[11px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300'
-                        : 'text-[11px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300'
-                    }
-                  >
-                    {ev.level.toUpperCase()}
-                  </span>
+                <span className="absolute left-2 top-2 bottom-2 w-px bg-slate-700/70" />
+                <div className="pl-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px] font-mono">
+                      {ev.time}
+                    </span>
+                    <span
+                      className={
+                        ev.level === 'info'
+                          ? 'text-[11px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300'
+                          : ev.level === 'warning'
+                          ? 'text-[11px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300'
+                          : 'text-[11px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300'
+                      }
+                    >
+                      {ev.level.toUpperCase()}
+                    </span>
+                  </div>
+                  <p className="text-slate-100 leading-snug mt-1">
+                    {ev.title}
+                  </p>
+                  <p className="text-slate-500 text-[11px] mt-0.5">
+                    Источник: {ev.source}
+                  </p>
                 </div>
-                <p className="text-slate-100 leading-snug">{ev.title}</p>
-                <p className="text-slate-500 text-[11px]">
-                  Источник: {ev.source}
-                </p>
               </div>
             ))}
           </div>
